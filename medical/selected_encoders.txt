@@ -1,0 +1,4 @@
+clip_vit
+clip_resnet
+biomedclip_vit
+medclip_resnet

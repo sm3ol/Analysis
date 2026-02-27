@@ -1,0 +1,6 @@
+{
+  "source_path": "data/openx_raw/exports/episode_000001.pt",
+  "copied_into": "Analysis/embodied_ai/dataset/episode_000001.pt",
+  "source_dataset": "robotics/bridge_data_v2/0.0.1",
+  "notes": "Single real sample episode staged locally for embodied analysis checks."
+}

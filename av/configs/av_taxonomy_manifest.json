@@ -1,0 +1,55 @@
+{
+  "domain": "autonomous_driving",
+  "dataset": "nuScenes",
+  "severities": [1, 2, 3, 4, 5],
+  "modalities": {
+    "lidar": {
+      "encoders": [
+        "pointpillars",
+        "pointrcnn",
+        "pv_rcnn",
+        "centerpoint"
+      ],
+      "corruptions": [
+        "density_decrease",
+        "cutout",
+        "fov_lost",
+        "lidar_crosstalk",
+        "motion_compensation",
+        "spatial_misalignment",
+        "temporal_misalignment",
+        "rotation",
+        "scale",
+        "shear",
+        "moving_object",
+        "fog",
+        "rain",
+        "snow",
+        "strong_sunlight",
+        "local_density_decrease",
+        "local_cutout",
+        "local_gaussian_noise",
+        "local_uniform_noise",
+        "local_impulse_noise"
+      ]
+    },
+    "camera": {
+      "encoders": [
+        "bevformer",
+        "detr3d"
+      ],
+      "corruptions": [
+        "gaussian_noise",
+        "impulse_noise",
+        "uniform_noise",
+        "motion_blur",
+        "spatial_misalignment",
+        "temporal_misalignment",
+        "fog",
+        "rain",
+        "snow",
+        "strong_sunlight"
+      ]
+    }
+  }
+}
