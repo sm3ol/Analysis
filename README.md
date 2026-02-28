@@ -27,7 +27,7 @@ The intended workflow is split into three validation layers:
 - validate the full implemented inference path through encoder, projection,
   scorer, and temporal logic
 
-This split is important because it lets students isolate failures cleanly:
+This split lets students isolate failures cleanly:
 - scorer-only fails: shared scorer/runtime issue
 - encoder-only fails: encoder/model-asset issue
 - encoder + scorer fails after encoder-only passes: integration issue
@@ -37,7 +37,7 @@ This split is important because it lets students isolate failures cleanly:
 - `embodied_ai/`
   - fully usable for student smoke checks and repeated validation
   - includes shared scorer checks, per-encoder checks, one staged sample
-    episode, and recovery scenarios
+    episode, optional recovery scenarios, and a loop runner
   - includes local model assets for DINOv2 and SigLIP plus a vendored RT-1
     snapshot
 - `av/`
@@ -96,40 +96,50 @@ Important details:
 - `av` is required so the `transformers` import path coexists cleanly with the
   sibling `Analysis/av` directory
 
-## Device Profiles
+## Strict GPU Policy
 
-Students can run the `embodied_ai` workflow in four practical modes:
+The student instructions in this repo are now written for strict GPU-only runs.
+That means:
+- no CPU fallback is part of the normal documented workflow
+- if a command cannot run on the selected GPU backend, it should fail with an
+  explicit error
+- that failure should be treated as a real compatibility result, not something
+  to hide
 
-1. NVIDIA / CUDA
-- preferred on Linux or Windows workstations with an NVIDIA GPU
-- use `cuda`
+### NVIDIA / CUDA
 
-2. Apple Silicon native MPS
-- works cleanly for `siglip` and `rt1`
-- use `mps`
+This is the preferred environment for full GPU coverage.
 
-3. Apple Silicon MPS with CPU fallback
-- required for `dinov2` and `openvla` on current Apple PyTorch builds because
-  `aten::upsample_bicubic2d.out` is not fully implemented on MPS
-- use `PYTORCH_ENABLE_MPS_FALLBACK=1` with `mps`
+How to verify:
 
-4. CPU-only
-- slowest option
-- useful for debugging or for systems without a usable GPU
-- use `cpu`
+```bash
+python -c "import torch; print(torch.cuda.is_available(), torch.cuda.device_count())"
+```
 
-## Recommended Student Workflow
+Expected:
+- first value should be `True`
+- second value should be `>= 1`
 
-1. Enter `embodied_ai/`.
-2. Create the environment and install dependencies.
-3. Run the shared scorer-only smoke path.
-4. Run one encoder in encoder-only mode.
-5. Run the same encoder in encoder + scorer mode.
-6. Repeat across the remaining encoders.
-7. Inspect the JSON files under `outputs/`.
+### Apple Silicon / MPS
+
+This is supported as a strict GPU-only validation path, but it does not support
+all four embodied encoders equally.
+
+Validated strict MPS results on Apple Silicon:
+- `siglip`: passes
+- `rt1`: passes
+- `dinov2`: fails with an MPS backend limitation
+- `openvla`: fails with the same MPS backend limitation
+
+That behavior is expected and should remain visible in the student workflow.
+
+## Student Guides
 
 The detailed device-by-device runbook is in:
 - `embodied_ai/README.md`
 
-Students should treat that file as the primary operating guide for the current
+The scoring-only quick guide is in:
+- `embodied_ai/SCORING_MANUAL.md`
+
+Students should use those two files as the operating guides for the current
 analysis workspace.

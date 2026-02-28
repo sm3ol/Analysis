@@ -8,10 +8,20 @@ It is organized around three separate validation targets:
 - encoder-only
 - encoder + scorer
 
-Students should run those in that order. That order is intentional:
+Students should run those in that order:
 - if scorer-only fails, the shared scorer/runtime path is broken
 - if scorer-only passes but encoder-only fails, the issue is in the encoder path
 - if both pass but encoder + scorer fails, the integration path is where to debug
+
+Important:
+- normal scoring and recovery testing are not the same thing
+- if the goal is simply to score data, students should use the normal scoring
+  scripts and ignore the recovery scripts unless they explicitly want to test
+  corruption handling
+- the dedicated scoring guide is in `SCORING_MANUAL.md`
+- the normal student workflow below is documented as strict GPU-only
+- if a command cannot run on the selected GPU, it should fail with an explicit
+  error
 
 ## Folder Layout
 
@@ -95,7 +105,7 @@ Why these matter:
 - `av` prevents the `transformers` import path from failing because this repo
   also has a sibling `Analysis/av` directory
 
-## Device Matrix
+## Strict GPU Device Matrix
 
 Use the profile that matches the student machine.
 
@@ -117,59 +127,29 @@ Commands should use:
 - `EMBODIED_DEVICE=cuda`
 - `--device cuda`
 
-### Profile B: Apple Silicon native MPS
+### Profile B: Apple Silicon strict MPS
 
-Use this on Apple Silicon Macs when running:
-- `siglip`
-- `rt1`
+Use this on Apple Silicon Macs when you want strict GPU-only validation.
 
 Commands should use:
 - `EMBODIED_DEVICE=mps`
 - `--device mps`
 
-These paths were validated successfully on Apple Silicon:
-- `siglip` encoder-only
-- `siglip` encoder + scorer
-- `rt1` encoder-only
-- `rt1` encoder + scorer
+Validated strict MPS results on Apple Silicon:
+- `siglip` encoder-only: passes
+- `siglip` encoder + scorer: passes
+- `siglip` real encoder + scorer: passes
+- `siglip` recovery scenarios: pass
+- `rt1` encoder-only: passes
+- `rt1` encoder + scorer: passes
+- `rt1` real encoder + scorer: passes
+- `rt1` recovery scenarios: pass
+- `dinov2`: fails on strict MPS because `aten::upsample_bicubic2d.out` is not
+  implemented on MPS
+- `openvla`: fails on strict MPS for the same reason
 
-### Profile C: Apple Silicon MPS with CPU fallback
-
-Use this on Apple Silicon Macs when running:
-- `dinov2`
-- `openvla`
-
-Why this profile exists:
-- those two encoder paths can hit the MPS backend limitation for
-  `aten::upsample_bicubic2d.out`
-- when that happens, native MPS execution stops with `NotImplementedError`
-- `PYTORCH_ENABLE_MPS_FALLBACK=1` lets PyTorch run only the unsupported ops on
-  CPU while the rest of the graph continues on `mps`
-
-Commands should use:
-- `PYTORCH_ENABLE_MPS_FALLBACK=1`
-- `EMBODIED_DEVICE=mps`
-- `--device mps`
-
-These paths were validated successfully on Apple Silicon with fallback enabled:
-- `dinov2` encoder-only
-- `dinov2` encoder + scorer
-- `openvla` encoder-only
-- `openvla` encoder + scorer
-
-### Profile D: CPU-only
-
-Use this when:
-- there is no usable GPU
-- CUDA is unavailable
-- MPS is unavailable
-- you want the simplest debugging path
-
-Commands should use:
-- `EMBODIED_DEVICE=cpu`
-- `--device cpu`
-
-This is the slowest path, but it avoids GPU backend-specific issues.
+This is expected behavior. In the strict GPU workflow, those failures should be
+left visible.
 
 ## Workflow 1: Scorer-Only
 
@@ -189,20 +169,12 @@ source .venv/bin/activate
 EMBODIED_DEVICE=cuda bash smoke_test.sh
 ```
 
-### Scorer-only on Apple Silicon
+### Scorer-only on Apple Silicon / MPS
 
 ```bash
 cd Analysis/embodied_ai
 source .venv/bin/activate
 EMBODIED_DEVICE=mps bash smoke_test.sh
-```
-
-### Scorer-only on CPU
-
-```bash
-cd Analysis/embodied_ai
-source .venv/bin/activate
-EMBODIED_DEVICE=cpu bash smoke_test.sh
 ```
 
 What success looks like:
@@ -238,37 +210,21 @@ EMBODIED_DEVICE=cuda bash siglip/run_encoder_only.sh --device cuda
 EMBODIED_DEVICE=cuda bash rt1/run_encoder_only.sh --device cuda
 ```
 
-### Encoder-only on Apple Silicon (native MPS where supported)
+### Encoder-only on Apple Silicon / MPS
 
 ```bash
 cd Analysis/embodied_ai
 source .venv/bin/activate
 
+EMBODIED_DEVICE=mps bash dinov2/run_encoder_only.sh --device mps
+EMBODIED_DEVICE=mps bash openvla/run_encoder_only.sh --device mps
 EMBODIED_DEVICE=mps bash siglip/run_encoder_only.sh --device mps
 EMBODIED_DEVICE=mps bash rt1/run_encoder_only.sh --device mps
 ```
 
-### Encoder-only on Apple Silicon (MPS with fallback for unsupported ops)
-
-```bash
-cd Analysis/embodied_ai
-source .venv/bin/activate
-
-PYTORCH_ENABLE_MPS_FALLBACK=1 EMBODIED_DEVICE=mps bash dinov2/run_encoder_only.sh --device mps
-PYTORCH_ENABLE_MPS_FALLBACK=1 EMBODIED_DEVICE=mps bash openvla/run_encoder_only.sh --device mps
-```
-
-### Encoder-only on CPU
-
-```bash
-cd Analysis/embodied_ai
-source .venv/bin/activate
-
-EMBODIED_DEVICE=cpu bash dinov2/run_encoder_only.sh --device cpu
-EMBODIED_DEVICE=cpu bash openvla/run_encoder_only.sh --device cpu
-EMBODIED_DEVICE=cpu bash siglip/run_encoder_only.sh --device cpu
-EMBODIED_DEVICE=cpu bash rt1/run_encoder_only.sh --device cpu
-```
+Expected Apple strict-MPS result:
+- `siglip` and `rt1` should pass
+- `dinov2` and `openvla` should fail with the MPS backend error
 
 What success looks like:
 - `[ADAPTER-TEST] ... passed ...`
@@ -299,37 +255,21 @@ EMBODIED_DEVICE=cuda bash siglip/run_with_scorer.sh --device cuda
 EMBODIED_DEVICE=cuda bash rt1/run_with_scorer.sh --device cuda
 ```
 
-### Encoder + scorer on Apple Silicon (native MPS where supported)
+### Encoder + scorer on Apple Silicon / MPS
 
 ```bash
 cd Analysis/embodied_ai
 source .venv/bin/activate
 
+EMBODIED_DEVICE=mps bash dinov2/run_with_scorer.sh --device mps
+EMBODIED_DEVICE=mps bash openvla/run_with_scorer.sh --device mps
 EMBODIED_DEVICE=mps bash siglip/run_with_scorer.sh --device mps
 EMBODIED_DEVICE=mps bash rt1/run_with_scorer.sh --device mps
 ```
 
-### Encoder + scorer on Apple Silicon (MPS with fallback for unsupported ops)
-
-```bash
-cd Analysis/embodied_ai
-source .venv/bin/activate
-
-PYTORCH_ENABLE_MPS_FALLBACK=1 EMBODIED_DEVICE=mps bash dinov2/run_with_scorer.sh --device mps
-PYTORCH_ENABLE_MPS_FALLBACK=1 EMBODIED_DEVICE=mps bash openvla/run_with_scorer.sh --device mps
-```
-
-### Encoder + scorer on CPU
-
-```bash
-cd Analysis/embodied_ai
-source .venv/bin/activate
-
-EMBODIED_DEVICE=cpu bash dinov2/run_with_scorer.sh --device cpu
-EMBODIED_DEVICE=cpu bash openvla/run_with_scorer.sh --device cpu
-EMBODIED_DEVICE=cpu bash siglip/run_with_scorer.sh --device cpu
-EMBODIED_DEVICE=cpu bash rt1/run_with_scorer.sh --device cpu
-```
+Expected Apple strict-MPS result:
+- `siglip` and `rt1` should pass
+- `dinov2` and `openvla` should fail with the MPS backend error
 
 What success looks like:
 - `[RUNTIME-TEST] ... passed ...`
@@ -337,6 +277,30 @@ What success looks like:
 
 Use this mode when the student wants the full implemented pipeline with both the
 encoder and scorer together.
+
+## Scoring vs Recovery
+
+Students often confuse the recovery scripts with the normal scorer path. They
+serve different purposes.
+
+Normal scoring:
+- this is the regular inference path
+- use:
+  - `run_with_scorer.sh`
+  - `run_real_with_scorer.sh`
+- this path does not manually force Brain A or Brain B
+- the runtime state machine decides behavior internally
+
+Recovery testing:
+- this is an optional stress-test path
+- it intentionally injects corruption and then checks whether the temporal logic
+  responds and later stabilizes again
+- use:
+  - `run_brain_a_recovery.sh`
+  - `run_brain_a_brain_b_recovery.sh`
+
+If the student is only trying to score an input and collect scorer outputs, the
+recovery scripts are not required.
 
 ## Real-Data Checks
 
@@ -362,29 +326,28 @@ EMBODIED_DEVICE=cuda bash rt1/run_real_encoder_only.sh --device cuda
 EMBODIED_DEVICE=cuda bash rt1/run_real_with_scorer.sh --device cuda
 ```
 
-### Real-data checks on Apple Silicon
-
-Use the same device rule as the synthetic checks:
-- `siglip` and `rt1`: native `mps`
-- `dinov2` and `openvla`: `mps` with fallback enabled
-
-Examples:
+### Real-data checks on Apple Silicon / MPS
 
 ```bash
+cd Analysis/embodied_ai
+source .venv/bin/activate
+
+EMBODIED_DEVICE=mps bash dinov2/run_real_encoder_only.sh --device mps
+EMBODIED_DEVICE=mps bash dinov2/run_real_with_scorer.sh --device mps
+
+EMBODIED_DEVICE=mps bash openvla/run_real_encoder_only.sh --device mps
+EMBODIED_DEVICE=mps bash openvla/run_real_with_scorer.sh --device mps
+
+EMBODIED_DEVICE=mps bash siglip/run_real_encoder_only.sh --device mps
 EMBODIED_DEVICE=mps bash siglip/run_real_with_scorer.sh --device mps
+
+EMBODIED_DEVICE=mps bash rt1/run_real_encoder_only.sh --device mps
 EMBODIED_DEVICE=mps bash rt1/run_real_with_scorer.sh --device mps
-PYTORCH_ENABLE_MPS_FALLBACK=1 EMBODIED_DEVICE=mps bash dinov2/run_real_with_scorer.sh --device mps
-PYTORCH_ENABLE_MPS_FALLBACK=1 EMBODIED_DEVICE=mps bash openvla/run_real_with_scorer.sh --device mps
 ```
 
-### Real-data checks on CPU
-
-```bash
-EMBODIED_DEVICE=cpu bash dinov2/run_real_encoder_only.sh --device cpu
-EMBODIED_DEVICE=cpu bash dinov2/run_real_with_scorer.sh --device cpu
-```
-
-Repeat the same pattern for `openvla`, `siglip`, and `rt1`.
+Expected Apple strict-MPS result:
+- `siglip` and `rt1` should pass
+- `dinov2` and `openvla` should fail with the MPS backend error
 
 Matrix wrappers from the `embodied_ai` root:
 
@@ -393,13 +356,15 @@ bash run_real_encoder_matrix.sh
 bash run_real_runtime_matrix.sh
 ```
 
-Those wrappers inherit the same device considerations, so students should use
-per-encoder scripts when they need explicit Apple fallback control.
+Those wrappers do not override the default device, so on Apple Silicon students
+should prefer the explicit per-encoder commands above.
 
 ## Recovery Scenarios
 
 These scripts use the staged real sample, build a corrupted copy, and validate
 that the temporal logic recovers correctly.
+
+This section is optional. It is not part of the normal scoring flow.
 
 Per-encoder commands exist in all four encoder folders:
 - `run_brain_a_recovery.sh`
@@ -414,14 +379,18 @@ EMBODIED_DEVICE=cuda bash dinov2/run_brain_a_recovery.sh --device cuda
 EMBODIED_DEVICE=cuda bash dinov2/run_brain_a_brain_b_recovery.sh --device cuda
 ```
 
-Example on Apple Silicon for DINOv2:
+Example on Apple Silicon / MPS:
 
 ```bash
 cd Analysis/embodied_ai
 source .venv/bin/activate
-PYTORCH_ENABLE_MPS_FALLBACK=1 EMBODIED_DEVICE=mps bash dinov2/run_brain_a_recovery.sh --device mps
-PYTORCH_ENABLE_MPS_FALLBACK=1 EMBODIED_DEVICE=mps bash dinov2/run_brain_a_brain_b_recovery.sh --device mps
+EMBODIED_DEVICE=mps bash dinov2/run_brain_a_recovery.sh --device mps
+EMBODIED_DEVICE=mps bash dinov2/run_brain_a_brain_b_recovery.sh --device mps
 ```
+
+Expected Apple strict-MPS result:
+- `siglip` and `rt1` should pass
+- `dinov2` and `openvla` should fail with the MPS backend error
 
 Interpretation:
 - `run_brain_a_recovery.sh`: Brain A reacts to corruption and the state machine
@@ -429,9 +398,9 @@ Interpretation:
 - `run_brain_a_brain_b_recovery.sh`: Brain A triggers, Brain B participates,
   and the system still returns to clean mode
 
-## Copy-Paste Device-Specific Run Sequences
+## Copy-Paste Strict GPU Validation Sequences
 
-Use the section below that matches the student's machine.
+Use the block that matches the student machine.
 
 ### Full sequence: NVIDIA / CUDA machine
 
@@ -443,20 +412,32 @@ EMBODIED_DEVICE=cuda bash smoke_test.sh
 
 EMBODIED_DEVICE=cuda bash dinov2/run_encoder_only.sh --device cuda
 EMBODIED_DEVICE=cuda bash dinov2/run_with_scorer.sh --device cuda
+EMBODIED_DEVICE=cuda bash dinov2/run_real_with_scorer.sh --device cuda
+EMBODIED_DEVICE=cuda bash dinov2/run_brain_a_recovery.sh --device cuda
+EMBODIED_DEVICE=cuda bash dinov2/run_brain_a_brain_b_recovery.sh --device cuda
 
 EMBODIED_DEVICE=cuda bash openvla/run_encoder_only.sh --device cuda
 EMBODIED_DEVICE=cuda bash openvla/run_with_scorer.sh --device cuda
+EMBODIED_DEVICE=cuda bash openvla/run_real_with_scorer.sh --device cuda
+EMBODIED_DEVICE=cuda bash openvla/run_brain_a_recovery.sh --device cuda
+EMBODIED_DEVICE=cuda bash openvla/run_brain_a_brain_b_recovery.sh --device cuda
 
 EMBODIED_DEVICE=cuda bash siglip/run_encoder_only.sh --device cuda
 EMBODIED_DEVICE=cuda bash siglip/run_with_scorer.sh --device cuda
+EMBODIED_DEVICE=cuda bash siglip/run_real_with_scorer.sh --device cuda
+EMBODIED_DEVICE=cuda bash siglip/run_brain_a_recovery.sh --device cuda
+EMBODIED_DEVICE=cuda bash siglip/run_brain_a_brain_b_recovery.sh --device cuda
 
 EMBODIED_DEVICE=cuda bash rt1/run_encoder_only.sh --device cuda
 EMBODIED_DEVICE=cuda bash rt1/run_with_scorer.sh --device cuda
+EMBODIED_DEVICE=cuda bash rt1/run_real_with_scorer.sh --device cuda
+EMBODIED_DEVICE=cuda bash rt1/run_brain_a_recovery.sh --device cuda
+EMBODIED_DEVICE=cuda bash rt1/run_brain_a_brain_b_recovery.sh --device cuda
 ```
 
-### Full sequence: Apple Silicon Mac
+### Full sequence: Apple Silicon strict MPS
 
-This is the exact pattern validated on Apple Silicon:
+This is the exact strict GPU-only pattern validated on Apple Silicon:
 
 ```bash
 cd Analysis/embodied_ai
@@ -464,39 +445,80 @@ source .venv/bin/activate
 
 EMBODIED_DEVICE=mps bash smoke_test.sh
 
+EMBODIED_DEVICE=mps bash dinov2/run_encoder_only.sh --device mps
+EMBODIED_DEVICE=mps bash openvla/run_encoder_only.sh --device mps
 EMBODIED_DEVICE=mps bash siglip/run_encoder_only.sh --device mps
-EMBODIED_DEVICE=mps bash siglip/run_with_scorer.sh --device mps
-
 EMBODIED_DEVICE=mps bash rt1/run_encoder_only.sh --device mps
+
+EMBODIED_DEVICE=mps bash dinov2/run_with_scorer.sh --device mps
+EMBODIED_DEVICE=mps bash openvla/run_with_scorer.sh --device mps
+EMBODIED_DEVICE=mps bash siglip/run_with_scorer.sh --device mps
 EMBODIED_DEVICE=mps bash rt1/run_with_scorer.sh --device mps
 
-PYTORCH_ENABLE_MPS_FALLBACK=1 EMBODIED_DEVICE=mps bash dinov2/run_encoder_only.sh --device mps
-PYTORCH_ENABLE_MPS_FALLBACK=1 EMBODIED_DEVICE=mps bash dinov2/run_with_scorer.sh --device mps
+EMBODIED_DEVICE=mps bash dinov2/run_real_with_scorer.sh --device mps
+EMBODIED_DEVICE=mps bash openvla/run_real_with_scorer.sh --device mps
+EMBODIED_DEVICE=mps bash siglip/run_real_with_scorer.sh --device mps
+EMBODIED_DEVICE=mps bash rt1/run_real_with_scorer.sh --device mps
 
-PYTORCH_ENABLE_MPS_FALLBACK=1 EMBODIED_DEVICE=mps bash openvla/run_encoder_only.sh --device mps
-PYTORCH_ENABLE_MPS_FALLBACK=1 EMBODIED_DEVICE=mps bash openvla/run_with_scorer.sh --device mps
+EMBODIED_DEVICE=mps bash dinov2/run_brain_a_recovery.sh --device mps
+EMBODIED_DEVICE=mps bash dinov2/run_brain_a_brain_b_recovery.sh --device mps
+
+EMBODIED_DEVICE=mps bash openvla/run_brain_a_recovery.sh --device mps
+EMBODIED_DEVICE=mps bash openvla/run_brain_a_brain_b_recovery.sh --device mps
+
+EMBODIED_DEVICE=mps bash siglip/run_brain_a_recovery.sh --device mps
+EMBODIED_DEVICE=mps bash siglip/run_brain_a_brain_b_recovery.sh --device mps
+
+EMBODIED_DEVICE=mps bash rt1/run_brain_a_recovery.sh --device mps
+EMBODIED_DEVICE=mps bash rt1/run_brain_a_brain_b_recovery.sh --device mps
 ```
 
-### Full sequence: CPU-only machine
+Expected Apple strict-MPS result for that sequence:
+- `siglip`: passes
+- `rt1`: passes
+- `dinov2`: fails with the explicit MPS backend error
+- `openvla`: fails with the explicit MPS backend error
+
+That outcome is the correct strict GPU compatibility result on Apple Silicon.
+
+## Looping One Episode
+
+There is a dedicated loop runner for repeated scoring on the staged sample
+episode:
+
+- `run_real_runtime_loop.sh`
+
+Purpose:
+- repeatedly run the real-data encoder + scorer path on the same local episode
+- save one JSON file per iteration
+- make repeated scoring easy without writing a shell loop by hand
+
+Usage:
 
 ```bash
 cd Analysis/embodied_ai
 source .venv/bin/activate
-
-EMBODIED_DEVICE=cpu bash smoke_test.sh
-
-EMBODIED_DEVICE=cpu bash dinov2/run_encoder_only.sh --device cpu
-EMBODIED_DEVICE=cpu bash dinov2/run_with_scorer.sh --device cpu
-
-EMBODIED_DEVICE=cpu bash openvla/run_encoder_only.sh --device cpu
-EMBODIED_DEVICE=cpu bash openvla/run_with_scorer.sh --device cpu
-
-EMBODIED_DEVICE=cpu bash siglip/run_encoder_only.sh --device cpu
-EMBODIED_DEVICE=cpu bash siglip/run_with_scorer.sh --device cpu
-
-EMBODIED_DEVICE=cpu bash rt1/run_encoder_only.sh --device cpu
-EMBODIED_DEVICE=cpu bash rt1/run_with_scorer.sh --device cpu
+bash run_real_runtime_loop.sh <encoder> [iterations]
 ```
+
+GPU-only examples:
+
+```bash
+EMBODIED_DEVICE=cuda bash run_real_runtime_loop.sh siglip 10 --device cuda
+EMBODIED_DEVICE=mps bash run_real_runtime_loop.sh siglip 10 --device mps
+EMBODIED_DEVICE=mps bash run_real_runtime_loop.sh rt1 10 --device mps
+EMBODIED_DEVICE=mps bash run_real_runtime_loop.sh dinov2 10 --device mps
+EMBODIED_DEVICE=mps bash run_real_runtime_loop.sh openvla 10 --device mps
+```
+
+Expected Apple strict-MPS loop result:
+- `siglip` and `rt1` should run successfully
+- `dinov2` and `openvla` should fail with the explicit MPS backend error
+
+Behavior:
+- the script reuses the staged episode in `dataset/`
+- it runs the real encoder + scorer path multiple times
+- it writes outputs under `outputs/loops/<encoder>/`
 
 ## Output Files
 
@@ -509,6 +531,7 @@ Common artifacts written under `outputs/`:
 - `*_brain_a_brain_b_recovery.json`: Brain-A to Brain-B recovery results
 - `outputs/corrupted/`: corrupted copies of the staged sample episode
 - `outputs/debug/`: debug traces such as synthetic temporal transitions
+- `outputs/loops/<encoder>/`: repeated real runtime results from the loop script
 
 Students should inspect these files after each run instead of relying only on
 terminal output.
@@ -529,12 +552,13 @@ terminal output.
 
 5. Apple `mps` backend lacks an operator.
 - symptom: `NotImplementedError` for an `aten::...` op
-- fix: rerun with `PYTORCH_ENABLE_MPS_FALLBACK=1`
+- in the strict GPU workflow, treat this as a real compatibility failure on
+  that machine
 
 6. Script defaults to `cuda` on a non-CUDA machine.
 - symptom: `CUDA was requested, but no GPU is visible in this session`
-- fix: explicitly set `EMBODIED_DEVICE=mps` or `EMBODIED_DEVICE=cpu`, and pass
-  the matching `--device` flag to encoder scripts
+- fix: explicitly set `EMBODIED_DEVICE=mps` on Apple Silicon, and pass the
+  matching `--device mps` flag to encoder scripts
 
 ## Pass Criteria
 
