@@ -22,6 +22,18 @@ These are the standard scoring paths students should use day to day.
 
 If the goal is simply "run scoring," these are the commands that matter.
 
+## What To Install First
+
+The repo already includes the requirement files students should use:
+- `requirements.txt` for the full encoder workflow
+- `requirements-smoke.txt` for scorer-only smoke
+
+Use:
+
+```bash
+pip install -r requirements.txt
+```
+
 ## What Recovery Is
 
 Recovery is not the normal scoring path.
@@ -126,6 +138,16 @@ EMBODIED_DEVICE=mps bash run_real_runtime_loop.sh rt1 10 --device mps
 On Apple strict MPS:
 - `siglip` and `rt1` should run
 - `dinov2` and `openvla` should fail with the explicit MPS backend error
+
+## Decision Table
+
+If the student says:
+- "I only want to test the scorer": use `bash smoke_test.sh`
+- "I want to test the encoder alone": use `bash <encoder>/run_encoder_only.sh`
+- "I want the normal full scoring path": use `bash <encoder>/run_with_scorer.sh`
+- "I want to score the staged real sample": use `bash <encoder>/run_real_with_scorer.sh`
+- "I want repeated scoring on the same episode": use `bash run_real_runtime_loop.sh <encoder> [iterations]`
+- "I want to test corruption handling": use the recovery scripts
 
 ## Practical Rule
 

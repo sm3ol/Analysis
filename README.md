@@ -87,6 +87,8 @@ The `embodied_ai` workflow is validated against the pinned dependency set in:
 - `embodied_ai/requirements.txt`
 - `embodied_ai/requirements-smoke.txt`
 
+These files already exist in the repo and are the exact files students should install from.
+
 Important details:
 - `torch==2.5.1` is intentionally pinned because newer PyTorch versions can
   break the staged sample-episode loader in the original repo code

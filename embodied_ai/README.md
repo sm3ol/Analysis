@@ -105,6 +105,39 @@ Why these matter:
 - `av` prevents the `transformers` import path from failing because this repo
   also has a sibling `Analysis/av` directory
 
+Exact install commands students should use:
+
+```bash
+pip install -r requirements.txt
+```
+
+For scorer-only smoke only:
+
+```bash
+pip install -r requirements-smoke.txt
+```
+
+## Script Map
+
+This is the direct map from student intent to script.
+
+If the student wants to:
+- verify the shared scorer logic only:
+  - `bash smoke_test.sh`
+- verify one encoder without the scorer:
+  - `bash <encoder>/run_encoder_only.sh`
+- verify one encoder with the scorer:
+  - `bash <encoder>/run_with_scorer.sh`
+- verify one encoder on the staged real sample without the scorer:
+  - `bash <encoder>/run_real_encoder_only.sh`
+- verify one encoder on the staged real sample with the scorer:
+  - `bash <encoder>/run_real_with_scorer.sh`
+- run repeated scoring on the same staged episode:
+  - `bash run_real_runtime_loop.sh <encoder> [iterations]`
+- intentionally test corruption handling and temporal recovery:
+  - `bash <encoder>/run_brain_a_recovery.sh`
+  - `bash <encoder>/run_brain_a_brain_b_recovery.sh`
+
 ## Strict GPU Device Matrix
 
 Use the profile that matches the student machine.
@@ -301,6 +334,31 @@ Recovery testing:
 
 If the student is only trying to score an input and collect scorer outputs, the
 recovery scripts are not required.
+
+## What Each Script Produces
+
+Students should not rely only on terminal output. Each script writes structured
+artifacts that can be inspected afterward.
+
+Typical outputs:
+- `smoke_test.sh`:
+  - `outputs/scorer_self_test.json`
+  - `outputs/debug/synthetic_recovery_check.csv`
+  - `outputs/corrupted/episode_000001_noise_and_occlusion.pt`
+- `<encoder>/run_encoder_only.sh`:
+  - `outputs/<encoder>_adapter_self_test.json`
+- `<encoder>/run_with_scorer.sh`:
+  - `outputs/<encoder>_runtime_self_test.json`
+- `<encoder>/run_real_encoder_only.sh`:
+  - `outputs/<encoder>_real_adapter_check.json`
+- `<encoder>/run_real_with_scorer.sh`:
+  - `outputs/<encoder>_real_runtime_check.json`
+- `<encoder>/run_brain_a_recovery.sh`:
+  - `outputs/<encoder>_brain_a_recovery.json`
+- `<encoder>/run_brain_a_brain_b_recovery.sh`:
+  - `outputs/<encoder>_brain_a_brain_b_recovery.json`
+- `run_real_runtime_loop.sh`:
+  - `outputs/loops/<encoder>/...`
 
 ## Real-Data Checks
 
@@ -537,6 +595,11 @@ Students should inspect these files after each run instead of relying only on
 terminal output.
 
 ## Known Failure Modes
+
+Before this list, students should use this quick interpretation rule:
+- a `FutureWarning` about `torch.load` is a warning, not a failure
+- a `NotImplementedError` on Apple `mps` is a real GPU compatibility failure
+- a script is successful only if it prints `passed` (or the shared smoke `[DONE]` line) and writes the expected output file
 
 1. `git lfs pull` was not run.
 - symptom: `dataset/episode_000001.pt` is tiny and `torch.load` fails
