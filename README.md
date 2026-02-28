@@ -145,3 +145,144 @@ The scoring-only quick guide is in:
 
 Students should use those two files as the operating guides for the current
 analysis workspace.
+
+## System Overview
+
+The embodied analysis path is organized so that encoder backbones remain
+adapter-isolated. Each encoder is integrated through its own adapter boundary,
+which keeps encoder-specific loading, preprocessing, and tokenization separate
+from the shared inference path.
+
+After the adapter boundary, the projection layer and BBC scorer path are shared
+across encoders. This keeps the downstream scoring and runtime logic
+encoder-agnostic and makes cross-encoder comparisons easier to evaluate under a
+consistent systems interface.
+
+## Performance Evaluation Protocol
+
+The profiling workflow should report the following required metrics:
+- encoder-only latency (ms)
+- scorer-only latency (ms)
+- end-to-end latency (ms)
+- overhead percentage, defined as `(end-to-end - encoder-only) / encoder-only`
+- peak GPU memory
+- GPU model
+- CUDA version
+- PyTorch version
+
+Optional supporting metrics:
+- kernel launch count
+- Nsight Systems trace
+
+Measurement rules:
+- use a fixed batch size for each reported comparison
+- use a fixed precision mode for each reported comparison
+- run warmup iterations before any timed measurement
+- report at least median latency and p95 latency
+- cluster profiling may be used for exploratory analysis
+- final reported numbers must be collected on the reference GPU (`Ada6000`)
+
+
+### Metric Definitions
+
+Encoder-only latency:
+- measure the forward pass through the adapter and encoder only
+- exclude projection and scorer execution
+- use CUDA-synchronized timing
+
+Scorer-only latency:
+- measure projection, Brain A, Brain B, and temporal logic
+- run on cached embeddings to isolate scorer compute
+
+End-to-end latency:
+- measure the full path from preprocessing through encoder, projection,
+  scorer, and temporal logic
+
+Overhead %:
+- compute `(end-to-end - encoder-only) / encoder-only`
+- report the result as a percentage
+
+Peak GPU memory:
+- measure with `torch.cuda.max_memory_allocated()`
+
+Throughput (optional but recommended):
+- report samples per second
+- use this to characterize steady-state execution
+
+Latency stability:
+- report median (`p50`) and `p95`
+- note visible jitter when `p95` deviates materially from the median
+
+### Optional Advanced Metrics
+
+Optional but encouraged metrics:
+- kernel launch count
+- GPU utilization percentage
+- SM occupancy, when available through Nsight Compute
+- memory bandwidth utilization
+- host-to-device transfer time
+- synchronization stall detection
+- CUDA Graph effectiveness, measured as latency before and after capture
+
+These metrics are useful for deeper bottleneck analysis, but they are not
+mandatory for initial reporting.
+
+### Tooling Guidance
+
+Required baseline tools:
+- `torch.profiler`
+- `torch.cuda.synchronize()` for correct timing
+- `torch.cuda.max_memory_allocated()`
+- `nvidia-smi` for sanity checks
+
+Advanced tools (optional):
+- Nsight Systems (`nsys`) for timeline-level profiling
+- Nsight Compute (`ncu`) for kernel-level metrics
+- `torch.compile` (PyTorch 2.x) for graph-level optimization experiments
+- CUDA Graph APIs for steady-state loop optimization
+
+All final reported numbers must be collected without profiler overhead enabled.
+Profilers are for diagnosis, not final timing.
+
+### Experimental Discipline Rules
+
+- always report GPU model and CUDA version
+- do not mix numbers from different GPUs in the same comparison table
+- fix batch size and precision before collecting numbers
+- warm up the GPU before timing
+- run multiple iterations and report the median
+
+### Separation of Concerns
+
+- measurement is owned by Anu
+- compute optimization is owned by Patrick
+- pipeline optimization is owned by Parth
+- tool selection must match the optimization goal; do not use Nsight Compute
+  when the issue is pipeline-level
+
+## Responsibilities
+
+Anu:
+- build a reproducible benchmark harness
+- collect metrics
+- produce CSV reports
+- identify bottlenecks
+
+Patrick:
+- optimize BBC scorer compute
+- reduce scorer-only latency
+- maintain numerical correctness
+- provide before/after comparison
+
+Parth:
+- optimize end-to-end execution
+- investigate CUDA Graph capture
+- reduce sync and allocation overhead
+- improve pipeline efficiency
+
+## Reporting Requirements
+
+- results must be submitted as CSV
+- each report must include environment metadata
+- each report must include a short written summary explaining the primary
+  bottlenecks and the changes made
