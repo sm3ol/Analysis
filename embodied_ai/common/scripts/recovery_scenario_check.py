@@ -259,15 +259,13 @@ def _run_two_brain_recovery(
                 d_bad=controller_d_bad,
             )
             state = step_result.state
-            if step_result.update_belief:
+            if step_result.update_belief and not suspicious_used:
                 state.belief_ema = ema_alpha * belief.detach() + (1.0 - ema_alpha) * z.detach()
 
-            if state.mode == ReliabilityMode.CLEAN:
-                final_rel = actual_r_a
-            elif state.mode == ReliabilityMode.SUSPECT:
-                final_rel = torch.minimum(actual_r_a, actual_r_b)
-            else:
+            if state.mode == ReliabilityMode.PERSISTENT:
                 final_rel = actual_r_b
+            else:
+                final_rel = actual_r_a
 
             rows.append(
                 {

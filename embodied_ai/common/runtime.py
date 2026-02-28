@@ -70,10 +70,19 @@ class InferenceRuntime:
             d_bad = None
             if state.mu_bad is not None:
                 d_bad = torch.norm(z_i.detach() - state.mu_bad.to(z_i.device), p=2)
-            suspicious = bool(
-                (r_a.item() < self.config.temporal.suspicious_threshold_a)
-                or (r_b.item() < self.config.temporal.clean_like_threshold_b)
-            )
+            # Match the current training-time routing:
+            # before persistent mode, Brain A drives suspicion;
+            # inside persistent mode, Brain B drives recovery.
+            warmup_known_clean = False
+            if batch.timestep is not None and "corrupt_start" in batch.metadata:
+                c_start = int(batch.metadata["corrupt_start"][i].item())
+                t_i = int(batch.timestep[i].item())
+                warmup_known_clean = t_i < c_start
+            if state.mode == ReliabilityMode.PERSISTENT:
+                raw_suspicious = bool(r_b.item() < self.config.temporal.clean_like_threshold_b)
+            else:
+                raw_suspicious = bool(r_a.item() < self.config.temporal.suspicious_threshold_a)
+            suspicious = False if warmup_known_clean else raw_suspicious
 
             step_result = self.components.state_machine.step(
                 state=state,
@@ -85,15 +94,13 @@ class InferenceRuntime:
                 d_bad=d_bad,
             )
 
-            if step_result.update_belief:
+            if step_result.update_belief and not suspicious:
                 state.belief_ema = ema_alpha * belief_i.detach() + (1.0 - ema_alpha) * z_i.detach()
 
-            if step_result.state.mode == ReliabilityMode.CLEAN:
-                final_rel = r_a
-            elif step_result.state.mode == ReliabilityMode.SUSPECT:
-                final_rel = torch.minimum(r_a, r_b)
-            else:
+            if step_result.state.mode == ReliabilityMode.PERSISTENT:
                 final_rel = r_b
+            else:
+                final_rel = r_a
 
             self.state_by_stream[stream_id] = step_result.state
             if i == 0:

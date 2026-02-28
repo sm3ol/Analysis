@@ -40,23 +40,30 @@ def main() -> None:
         state = ReliabilityState()
         modes = []
         finals = []
+        ema_window = max(1, int(cfg.temporal.belief_ema_window))
+        ema_alpha = float(ema_window - 1) / float(ema_window)
         for _ in range(max(1, int(args.steps))):
             z = torch.randn((int(args.latent_dim),), device=device)
             if state.belief_ema is None:
                 state.belief_ema = z.detach()
-            a_out = brain_a(state.belief_ema.unsqueeze(0), z.unsqueeze(0))
+            belief_i = state.belief_ema.to(device)
+            a_out = brain_a(belief_i.unsqueeze(0), z.unsqueeze(0))
             b_out = brain_b(z.unsqueeze(0))
             r_a = a_out.reliability.squeeze(0)
             r_b = b_out.reliability.squeeze(0)
-            suspicious = bool((r_a.item() < cfg.temporal.suspicious_threshold_a) or (r_b.item() < cfg.temporal.clean_like_threshold_b))
-            step = sm.step(state=state, z_t=z.detach(), r_a=r_a, r_b=r_b, suspicious=suspicious, d_clean=b_out.md_clean.squeeze(0), d_bad=None)
-            state = step.state
-            if state.mode == ReliabilityMode.CLEAN:
-                finals.append(float(r_a.item()))
-            elif state.mode == ReliabilityMode.SUSPECT:
-                finals.append(float(torch.minimum(r_a, r_b).item()))
+            if state.mode == ReliabilityMode.PERSISTENT:
+                suspicious = bool(r_b.item() < cfg.temporal.clean_like_threshold_b)
             else:
+                suspicious = bool(r_a.item() < cfg.temporal.suspicious_threshold_a)
+            step = sm.step(state=state, z_t=z.detach(), r_a=r_a, r_b=r_b, suspicious=suspicious, d_clean=b_out.md_clean.squeeze(0), d_bad=None)
+            next_state = step.state
+            if step.update_belief and not suspicious:
+                next_state.belief_ema = ema_alpha * belief_i.detach() + (1.0 - ema_alpha) * z.detach()
+            state = next_state
+            if state.mode == ReliabilityMode.PERSISTENT:
                 finals.append(float(r_b.item()))
+            else:
+                finals.append(float(r_a.item()))
             modes.append(state.mode.value)
         out["result"] = {"status": "passed", "mode_trace": modes, "mean_final": float(sum(finals)/len(finals))}
         print(f"[SCORER-TEST] passed final_mode={modes[-1]}", flush=True)
