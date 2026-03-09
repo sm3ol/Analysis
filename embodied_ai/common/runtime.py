@@ -48,7 +48,9 @@ class InferenceRuntime:
         belief_updates = []
         bad_buffer_sizes = []
         d_clean_list = []
+        md_clean_list = []
         d_bad_list = []
+        r_b_recover_list = []
         mode_name = "clean"
 
         ema_window = max(1, int(self.config.temporal.belief_ema_window))
@@ -66,20 +68,42 @@ class InferenceRuntime:
             b_out = self.components.brain_b(z_i.unsqueeze(0))
             r_a = a_out.reliability.squeeze(0)
             r_b = b_out.reliability.squeeze(0)
-            d_clean = b_out.md_clean.squeeze(0)
+            md_clean = b_out.md_clean.squeeze(0)
+            d_clean = torch.norm(
+                z_i.detach() - self.components.brain_b.mu_clean.to(z_i.device),
+                p=2,
+            )
+            recover_rb_ema_alpha = float(getattr(self.config.temporal, "recover_rb_ema_alpha", 0.0))
+            r_b_recover = r_b
+            if recover_rb_ema_alpha > 0.0 and state.mode == ReliabilityMode.PERSISTENT:
+                prev_rb = r_b.detach() if state.recover_rb_ema is None else state.recover_rb_ema.to(z_i.device)
+                r_b_recover = recover_rb_ema_alpha * prev_rb + (1.0 - recover_rb_ema_alpha) * r_b.detach()
+                state.recover_rb_ema = r_b_recover.detach()
+            elif state.mode != ReliabilityMode.PERSISTENT:
+                state.recover_rb_ema = None
             d_bad = None
             if state.mu_bad is not None:
                 d_bad = torch.norm(z_i.detach() - state.mu_bad.to(z_i.device), p=2)
-            # Match the current training-time routing:
-            # before persistent mode, Brain A drives suspicion;
-            # inside persistent mode, Brain B drives recovery.
+            # During the known-clean warmup prefix, calibrate belief/state only.
+            # This prevents early false alarms from pushing the stream into
+            # SUSPECT/PERSISTENT before any corruption can occur.
             warmup_known_clean = False
             if batch.timestep is not None and "corrupt_start" in batch.metadata:
                 c_start = int(batch.metadata["corrupt_start"][i].item())
                 t_i = int(batch.timestep[i].item())
                 warmup_known_clean = t_i < c_start
             if state.mode == ReliabilityMode.PERSISTENT:
-                raw_suspicious = bool(r_b.item() < self.config.temporal.clean_like_threshold_b)
+                persistent_enter_threshold_b = float(
+                    getattr(
+                        self.config.temporal,
+                        "persistent_enter_threshold_b",
+                        self.config.temporal.clean_like_threshold_b,
+                    )
+                )
+                raw_suspicious = bool(r_b.item() < persistent_enter_threshold_b)
+            elif state.mode == ReliabilityMode.RECOVERING:
+                # Recovery warmup disables Brain A alarms while EMA is rebuilt.
+                raw_suspicious = False
             else:
                 raw_suspicious = bool(r_a.item() < self.config.temporal.suspicious_threshold_a)
             suspicious = False if warmup_known_clean else raw_suspicious
@@ -92,12 +116,13 @@ class InferenceRuntime:
                 suspicious=suspicious,
                 d_clean=d_clean,
                 d_bad=d_bad,
+                r_b_recover=r_b_recover,
             )
 
             if step_result.update_belief and not suspicious:
                 state.belief_ema = ema_alpha * belief_i.detach() + (1.0 - ema_alpha) * z_i.detach()
 
-            if step_result.state.mode == ReliabilityMode.PERSISTENT:
+            if step_result.state.mode in (ReliabilityMode.PERSISTENT, ReliabilityMode.RECOVERING):
                 final_rel = r_b
             else:
                 final_rel = r_a
@@ -114,6 +139,8 @@ class InferenceRuntime:
             belief_updates.append(torch.tensor(float(step_result.update_belief), device=z.device))
             bad_buffer_sizes.append(torch.tensor(float(len(step_result.state.bad_buffer)), device=z.device))
             d_clean_list.append(d_clean)
+            md_clean_list.append(md_clean)
+            r_b_recover_list.append(r_b_recover)
             d_bad_list.append(torch.tensor(float("nan"), device=z.device) if d_bad is None else d_bad)
 
         step_out = ReliabilityStepOutput(
@@ -128,6 +155,8 @@ class InferenceRuntime:
                 "belief_update_enabled": torch.stack(belief_updates, dim=0),
                 "bad_buffer_size": torch.stack(bad_buffer_sizes, dim=0),
                 "d_clean": torch.stack(d_clean_list, dim=0),
+                "md_clean": torch.stack(md_clean_list, dim=0),
+                "r_b_recover": torch.stack(r_b_recover_list, dim=0),
                 "d_bad": torch.stack(d_bad_list, dim=0),
             },
         )

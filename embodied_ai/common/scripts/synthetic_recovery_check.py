@@ -16,6 +16,7 @@ def main() -> None:
         start_bad_buffer_after=15,
         switch_to_persistent_after=20,
         recover_required_steps=3,
+        recover_rewarm_steps=5,
         suspicious_threshold_a=0.95,
         clean_like_threshold_b=0.95,
     )

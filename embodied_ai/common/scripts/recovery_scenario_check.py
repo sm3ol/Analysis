@@ -53,14 +53,20 @@ def _build_cfg(encoder_name: str, scenario: str) -> FrameworkConfig:
     cfg = FrameworkConfig(encoder_name=encoder_name)
     cfg.temporal.suspicious_threshold_a = 0.95
     cfg.temporal.clean_like_threshold_b = 0.95
+    cfg.temporal.recover_anchor_mode = "strict"
+    cfg.temporal.recover_anchor_margin = 0.0
+    cfg.temporal.recover_rb_ema_alpha = 0.0
+    cfg.temporal.persistent_enter_threshold_b = 0.95
     if scenario == "brain_a_then_recovery":
         cfg.temporal.start_bad_buffer_after = 999
         cfg.temporal.switch_to_persistent_after = 999
         cfg.temporal.recover_required_steps = 2
+        cfg.temporal.recover_rewarm_steps = 1
     else:
         cfg.temporal.start_bad_buffer_after = 2
         cfg.temporal.switch_to_persistent_after = 3
         cfg.temporal.recover_required_steps = 2
+        cfg.temporal.recover_rewarm_steps = 1
     return cfg
 
 
@@ -238,7 +244,7 @@ def _run_two_brain_recovery(
                 controller_r_b = torch.tensor(0.05, device=device)
                 controller_d_clean = torch.tensor(5.0, device=device)
                 controller_d_bad = actual_d_bad
-            elif state.mode == ReliabilityMode.PERSISTENT and step.phase == "recover":
+            elif state.mode in (ReliabilityMode.PERSISTENT, ReliabilityMode.RECOVERING) and step.phase == "recover":
                 suspicious_used = False
                 controller_r_b = torch.tensor(0.99, device=device)
                 controller_d_clean = torch.tensor(0.1, device=device)
@@ -257,12 +263,13 @@ def _run_two_brain_recovery(
                 suspicious=bool(suspicious_used),
                 d_clean=controller_d_clean,
                 d_bad=controller_d_bad,
+                r_b_recover=controller_r_b,
             )
             state = step_result.state
             if step_result.update_belief and not suspicious_used:
                 state.belief_ema = ema_alpha * belief.detach() + (1.0 - ema_alpha) * z.detach()
 
-            if state.mode == ReliabilityMode.PERSISTENT:
+            if state.mode in (ReliabilityMode.PERSISTENT, ReliabilityMode.RECOVERING):
                 final_rel = actual_r_b
             else:
                 final_rel = actual_r_a

@@ -66,8 +66,15 @@ class BrainBScorer(nn.Module):
         super().__init__()
         self.register_buffer("mu_clean", stats.mu_clean)
         self.register_buffer("precision_clean", stats.precision_clean)
-        self.temperature = float(temperature)
+        self.temperature = max(1e-6, float(temperature))
         self.bias = float(bias)
+
+    def set_calibration(self, temperature: float | None = None, bias: float | None = None) -> None:
+        """Update runtime-only Brain B calibration knobs."""
+        if temperature is not None:
+            self.temperature = max(1e-6, float(temperature))
+        if bias is not None:
+            self.bias = float(bias)
 
     def forward(self, z: torch.Tensor) -> BrainBScoreOutput:
         """Compute Brain B reliability from MD-to-clean."""
