@@ -16,11 +16,6 @@ class TemporalConfig:
     recover_rewarm_steps: int = 10
     suspicious_threshold_a: float = 0.5
     clean_like_threshold_b: float = 0.7
-    recover_anchor_mode: str = "strict"
-    recover_anchor_margin: float = 0.0
-    recover_clean_threshold: float = 1.0
-    recover_rb_ema_alpha: float = 0.0
-    persistent_enter_threshold_b: float = 0.7
 
 
 @dataclass
