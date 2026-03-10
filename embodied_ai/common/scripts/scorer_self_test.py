@@ -13,6 +13,7 @@ from embodied_ai.common.device import resolve_device
 from embodied_ai.common.core.brain_b_stats import fit_clean_reference_stats
 from embodied_ai.common.core.scorer import BrainAScorer, BrainBScorer
 from embodied_ai.common.core.temporal import ReliabilityMode, ReliabilityState, ReliabilityStateMachine
+from embodied_ai.common.runtime import apply_frozen_test_params
 
 
 def parse_args() -> argparse.Namespace:
@@ -36,6 +37,7 @@ def main() -> None:
         brain_a = BrainAScorer(latent_dim=int(args.latent_dim)).to(device).eval()
         stats = fit_clean_reference_stats(torch.randn((max(8, int(args.batch_size) * 2), int(args.latent_dim)), dtype=torch.float32))
         brain_b = BrainBScorer(stats=stats, temperature=cfg.brain_b.md_temperature, bias=cfg.brain_b.md_bias).to(device).eval()
+        apply_frozen_test_params(cfg, brain_b)
         sm = ReliabilityStateMachine(cfg.temporal)
         state = ReliabilityState()
         modes = []

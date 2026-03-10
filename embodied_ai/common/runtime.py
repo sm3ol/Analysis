@@ -9,6 +9,7 @@ import torch
 from .base import EncoderAdapter
 from .config import FrameworkConfig
 from .core.brain_b_stats import CleanReferenceStats, load_clean_reference_stats
+from .core.frozen_params import FROZEN_TEST_PARAMS
 from .core.pooling import pool_adapter_output
 from .core.projection import SharedProjectionHead
 from .core.scorer import BrainAScorer, BrainBScorer
@@ -165,6 +166,25 @@ class InferenceRuntime:
         return step_out
 
 
+def apply_frozen_test_params(config: FrameworkConfig, brain_b: BrainBScorer | None = None) -> None:
+    """Apply frozen test-time controller defaults from training calibration."""
+    config.temporal.clean_like_threshold_b = float(FROZEN_TEST_PARAMS.clean_like_threshold_b)
+    config.temporal.recover_required_steps = int(FROZEN_TEST_PARAMS.recover_required_steps)
+    config.temporal.recover_rewarm_steps = int(FROZEN_TEST_PARAMS.recover_rewarm_steps)
+    config.temporal.persistent_enter_threshold_b = float(FROZEN_TEST_PARAMS.persistent_enter_threshold_b)
+    config.temporal.recover_anchor_mode = str(FROZEN_TEST_PARAMS.recover_anchor_mode)
+    config.temporal.recover_anchor_margin = float(FROZEN_TEST_PARAMS.recover_anchor_margin)
+    config.temporal.recover_clean_threshold = float(FROZEN_TEST_PARAMS.recover_clean_threshold)
+    config.temporal.recover_rb_ema_alpha = float(FROZEN_TEST_PARAMS.recover_rb_ema_alpha)
+    config.temporal.recovery_start_window = int(FROZEN_TEST_PARAMS.recovery_start_window)
+    config.temporal.controller_profile = str(FROZEN_TEST_PARAMS.profile_name)
+    if brain_b is not None:
+        brain_b.set_calibration(
+            temperature=float(FROZEN_TEST_PARAMS.brain_b_temperature),
+            bias=float(FROZEN_TEST_PARAMS.brain_b_bias),
+        )
+
+
 def build_runtime(config: FrameworkConfig, adapter: EncoderAdapter, device: torch.device) -> InferenceRuntime:
     adapter = adapter.to(device)
     projector = SharedProjectionHead(
@@ -180,6 +200,7 @@ def build_runtime(config: FrameworkConfig, adapter: EncoderAdapter, device: torc
         temperature=config.brain_b.md_temperature,
         bias=config.brain_b.md_bias,
     ).to(device)
+    apply_frozen_test_params(config, brain_b)
     state_machine = ReliabilityStateMachine(config.temporal)
     return InferenceRuntime(
         config=config,

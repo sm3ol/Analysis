@@ -14,6 +14,7 @@ from .family_md import (
     predict_family_md,
     save_family_md_stats,
 )
+from .frozen_params import FrozenControllerParams, FROZEN_TEST_PARAMS
 
 __all__ = [
     "SharedProjectionHead",
@@ -32,4 +33,6 @@ __all__ = [
     "enroll_family_md",
     "save_family_md_stats",
     "load_family_md_stats",
+    "FrozenControllerParams",
+    "FROZEN_TEST_PARAMS",
 ]

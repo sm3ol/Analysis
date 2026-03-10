@@ -17,7 +17,7 @@ from embodied_ai.common.core.projection import SharedProjectionHead
 from embodied_ai.common.core.scorer import BrainAScorer, BrainBScorer
 from embodied_ai.common.core.temporal import ReliabilityStateMachine
 from embodied_ai.common.dataset import episode_summary, load_episode, make_batch_for_step, select_step_indices
-from embodied_ai.common.runtime import InferenceComponents, InferenceRuntime
+from embodied_ai.common.runtime import InferenceComponents, InferenceRuntime, apply_frozen_test_params
 
 
 def parse_args() -> argparse.Namespace:
@@ -94,6 +94,7 @@ def main() -> None:
             temperature=cfg.brain_b.md_temperature,
             bias=cfg.brain_b.md_bias,
         ).to(device)
+        apply_frozen_test_params(cfg, brain_b)
         brain_a.eval()
         brain_b.eval()
 
