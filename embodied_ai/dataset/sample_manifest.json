@@ -1,6 +1,13 @@
 {
-  "source_path": "data/openx_raw/exports/episode_000001.pt",
-  "copied_into": "Analysis/embodied_ai/dataset/episode_000001.pt",
-  "source_dataset": "robotics/bridge_data_v2/0.0.1",
-  "notes": "Single real sample episode staged locally for embodied analysis checks."
+  "dataset_name": "droid_subset_sample_local",
+  "min_steps": 250,
+  "num_episodes": 1,
+  "episodes": [
+    {
+      "episode_id": 1,
+      "path": "episode_000001.pt",
+      "source": "/home/dal574571/ASPLOS 27/data/openx_raw/exports_droid_subset_10eps_min250/episode_000001.pt",
+      "note": "single staged sample copied for inference profiling quick-start"
+    }
+  ]
 }

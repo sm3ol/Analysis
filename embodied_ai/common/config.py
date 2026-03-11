@@ -10,12 +10,14 @@ class TemporalConfig:
     """Runtime temporal behavior for two-brain reliability."""
 
     belief_ema_window: int = 50
-    start_bad_buffer_after: int = 15
-    switch_to_persistent_after: int = 20
+    bad_run_window: int = 50
+    start_bad_buffer_after: int = 30
+    switch_to_persistent_after: int = 30
     recover_required_steps: int = 10
-    recover_rewarm_steps: int = 10
-    suspicious_threshold_a: float = 0.5
-    clean_like_threshold_b: float = 0.7
+    recover_rewarm_steps: int = 40
+    recover_rewarm_bad_allowance: int = 10
+    suspicious_threshold_a: float = 0.80
+    clean_like_threshold_b: float = 0.95
 
 
 @dataclass
@@ -38,6 +40,25 @@ class SupConConfig:
     lambda_weight: float = 0.1
     use_delta_embeddings: bool = True
     min_positives_per_family: int = 2
+
+
+@dataclass
+class ScoreTargetConfig:
+    """Target score bands for clean and corrupted frames."""
+
+    clean_low: float = 0.95
+    clean_high: float = 1.0
+    warmup_clean_low: float = 0.99
+    warmup_clean_high: float = 1.0
+    severity1_low: float = 0.6
+    severity1_high: float = 0.7
+    severity3_low: float = 0.3
+    severity3_high: float = 0.5
+    severity5_low: float = 0.05
+    severity5_high: float = 0.2
+    final_loss_weight: float = 1.0
+    brain_a_loss_weight: float = 0.5
+    brain_b_loss_weight: float = 0.25
 
 
 @dataclass
@@ -81,6 +102,7 @@ class FrameworkConfig:
     temporal: TemporalConfig = field(default_factory=TemporalConfig)
     brain_b: BrainBConfig = field(default_factory=BrainBConfig)
     supcon: SupConConfig = field(default_factory=SupConConfig)
+    score_targets: ScoreTargetConfig = field(default_factory=ScoreTargetConfig)
     splits: DataSplitConfig = field(default_factory=DataSplitConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
     optim: OptimConfig = field(default_factory=OptimConfig)

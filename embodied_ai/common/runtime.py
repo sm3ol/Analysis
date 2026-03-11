@@ -168,9 +168,14 @@ class InferenceRuntime:
 
 def apply_frozen_test_params(config: FrameworkConfig, brain_b: BrainBScorer | None = None) -> None:
     """Apply frozen test-time controller defaults from training calibration."""
+    config.temporal.bad_run_window = int(FROZEN_TEST_PARAMS.bad_run_window)
+    config.temporal.start_bad_buffer_after = int(FROZEN_TEST_PARAMS.start_bad_buffer_after)
+    config.temporal.switch_to_persistent_after = int(FROZEN_TEST_PARAMS.switch_to_persistent_after)
+    config.temporal.suspicious_threshold_a = float(FROZEN_TEST_PARAMS.suspicious_threshold_a)
     config.temporal.clean_like_threshold_b = float(FROZEN_TEST_PARAMS.clean_like_threshold_b)
     config.temporal.recover_required_steps = int(FROZEN_TEST_PARAMS.recover_required_steps)
     config.temporal.recover_rewarm_steps = int(FROZEN_TEST_PARAMS.recover_rewarm_steps)
+    config.temporal.recover_rewarm_bad_allowance = int(FROZEN_TEST_PARAMS.recover_rewarm_bad_allowance)
     config.temporal.persistent_enter_threshold_b = float(FROZEN_TEST_PARAMS.persistent_enter_threshold_b)
     config.temporal.recover_anchor_mode = str(FROZEN_TEST_PARAMS.recover_anchor_mode)
     config.temporal.recover_anchor_margin = float(FROZEN_TEST_PARAMS.recover_anchor_margin)

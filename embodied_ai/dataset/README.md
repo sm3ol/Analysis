@@ -1,14 +1,14 @@
 # Embodied Sample Dataset
 
-This folder holds the local real sample episodes used by the embodied analysis
-sub-repo.
+This folder holds the local real sample episode used by the embodied inference
+profiling workflow.
 
-Current sample:
+Current staged sample:
 - `episode_000001.pt`
 
-This sample was copied from the training-side exported Bridge/OpenX episodes so
-the analysis scripts can run against a stable local input without depending on
-the larger training dataset tree at runtime.
-
-By default, the real-data analysis scripts use the first `episode_*.pt` file in
-this folder.
+Notes:
+- We intentionally keep exactly one local episode in-repo so inference scripts
+  run out of the box.
+- The 10-episode source set lives outside this repo at:
+  - `/home/dal574571/ASPLOS 27/data/openx_raw/exports_droid_subset_10eps_min250`
+- By default, real-data scripts pick the first `episode_*.pt` in this folder.

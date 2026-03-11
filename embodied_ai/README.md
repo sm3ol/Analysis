@@ -32,8 +32,39 @@ Important:
 - `rt1/`: RT-1 adapter and scripts
 - `assets/`: local model assets used by standalone encoder runs
 - `vendor/`: vendored third-party code needed by standalone runs
-- `dataset/`: local sample episodes used by the real-data checks
+- `dataset/`: one staged local sample episode used by the real-data checks
 - `outputs/`: JSON results, corrupted samples, and debug artifacts
+
+
+## Training-Integrated Inference (Hardware Profiling)
+
+This inference pack is now aligned to the current DROID smoke-profile controller
+used by training:
+- rolling bad-run window: `50`
+- persistent switch trigger: `30` bad frames in the window
+- suspicious threshold (`Brain A`): `< 0.8`
+- clean-like threshold (`Brain B`): `>= 0.95`
+- recovery gate: `10` clean-like frames
+- grace rewarm: `40` frames with up to `10` bad frames tolerated
+
+To run with trained weights after training finishes, set:
+- `EMBODIED_CHECKPOINT_ROOT=<train_save_dir>`
+
+The real-data scripts automatically load:
+- `<train_save_dir>/<encoder>/checkpoint.pt`
+- `<train_save_dir>/<encoder>/brain_b_clean_stats.npz` (if present)
+
+Example (dinov2):
+
+```bash
+cd Analysis/embodied_ai
+source .venv/bin/activate
+export EMBODIED_CHECKPOINT_ROOT='/home/dal574571/ASPLOS 27/training/Embodied_AI/outputs/droid_subset_min200_train_supcon_familymd_dinov2'
+EMBODIED_DEVICE=cuda bash dinov2/run_real_with_scorer.sh --device cuda
+```
+
+If `EMBODIED_CHECKPOINT_ROOT` is not set, scripts fall back to local sample
+calibration (useful for smoke only, not for post-training profiling).
 
 ## Before You Start
 

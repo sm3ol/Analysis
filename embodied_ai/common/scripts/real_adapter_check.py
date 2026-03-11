@@ -23,6 +23,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--step_index", type=int, default=-1, help="Frame index to score; default is the final frame.")
     p.add_argument("--save_path", type=str, required=True)
     p.add_argument("--local_repo_root", type=str, default="")
+    p.add_argument("--checkpoint_path", type=str, default="")
     return p.parse_args()
 
 
@@ -30,6 +31,15 @@ def _write_result(path: str, payload: dict[str, Any]) -> None:
     out_path = Path(path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _resolve_optional_path(path_str: str) -> Path | None:
+    if not str(path_str).strip():
+        return None
+    p = Path(path_str).expanduser()
+    if not p.is_absolute():
+        p = (Path.cwd() / p).resolve()
+    return p
 
 
 def main() -> None:
@@ -49,6 +59,19 @@ def main() -> None:
 
         mod = importlib.import_module(args.module)
         adapter = mod.build_adapter(local_repo_root=args.local_repo_root or None).to(device)
+
+        ckpt_used = ""
+        ckpt_path = _resolve_optional_path(args.checkpoint_path)
+        if ckpt_path is not None:
+            if not ckpt_path.exists():
+                raise FileNotFoundError(f"checkpoint not found: {ckpt_path}")
+            payload = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+            adapter_state = payload.get("adapter_state_dict")
+            if adapter_state is None:
+                raise ValueError("checkpoint missing adapter_state_dict")
+            adapter.load_state_dict(adapter_state, strict=True)
+            ckpt_used = str(ckpt_path)
+
         adapter.eval()
 
         with torch.no_grad():
@@ -62,6 +85,7 @@ def main() -> None:
         out["result"] = {
             "status": "passed",
             "episode": episode_summary(episode),
+            "checkpoint_path": ckpt_used,
             "batch_images_shape": [int(v) for v in batch.images.shape],
             "tokens_shape": [int(v) for v in res.tokens.shape],
             "token_mask_shape": [int(v) for v in res.token_mask.shape],
