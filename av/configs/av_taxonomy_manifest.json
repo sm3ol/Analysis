@@ -1,55 +1,69 @@
 {
   "domain": "autonomous_driving",
+  "modality": "lidar_only",
   "dataset": "nuScenes",
-  "severities": [1, 2, 3, 4, 5],
-  "modalities": {
-    "lidar": {
-      "encoders": [
-        "pointpillars",
-        "pointrcnn",
-        "pv_rcnn",
-        "centerpoint"
-      ],
-      "corruptions": [
-        "density_decrease",
-        "cutout",
-        "fov_lost",
-        "lidar_crosstalk",
-        "motion_compensation",
-        "spatial_misalignment",
-        "temporal_misalignment",
-        "rotation",
-        "scale",
-        "shear",
-        "moving_object",
-        "fog",
-        "rain",
-        "snow",
-        "strong_sunlight",
+  "encoders": [
+    "pointpillars",
+    "pointrcnn",
+    "pvrcnn",
+    "centerpoint"
+  ],
+  "stage2_training_alignment": {
+    "episode_len": 180,
+    "stride": 180,
+    "clean_prefix": 50,
+    "corruption_len_min": 25,
+    "corruption_len_max": 50,
+    "severity_set": [1, 3, 5],
+    "supcon_enabled": true,
+    "family_balanced_sampler": true,
+    "suspicious_threshold_a": 0.95,
+    "clean_like_threshold_b": 0.95,
+    "recover_required_steps": 25,
+    "recover_rewarm_steps": 25,
+    "recover_anchor_mode": "strict"
+  },
+  "families": {
+    "dropout": {
+      "members": ["density_decrease", "cutout", "fov_lost"],
+      "default_representatives": ["density_decrease", "fov_lost"]
+    },
+    "local_noise": {
+      "members": [
         "local_density_decrease",
         "local_cutout",
         "local_gaussian_noise",
         "local_uniform_noise",
         "local_impulse_noise"
-      ]
-    },
-    "camera": {
-      "encoders": [
-        "bevformer",
-        "detr3d"
       ],
-      "corruptions": [
-        "gaussian_noise",
-        "impulse_noise",
-        "uniform_noise",
-        "motion_blur",
-        "spatial_misalignment",
-        "temporal_misalignment",
-        "fog",
-        "rain",
-        "snow",
-        "strong_sunlight"
-      ]
+      "default_representatives": ["local_uniform_noise", "local_gaussian_noise"]
+    },
+    "sensor_noise": {
+      "members": ["lidar_crosstalk"],
+      "default_representatives": ["lidar_crosstalk"]
+    },
+    "misalignment": {
+      "members": ["motion_compensation", "spatial_misalignment", "temporal_misalignment"],
+      "default_representatives": ["spatial_misalignment"]
+    },
+    "geometry": {
+      "members": ["rotation", "scale", "shear"],
+      "default_representatives": ["scale"]
+    },
+    "dynamic": {
+      "members": ["moving_object"],
+      "default_representatives": ["moving_object"]
+    },
+    "weather": {
+      "members": ["fog", "rain", "snow"],
+      "default_representatives": ["fog"]
+    },
+    "illumination": {
+      "members": ["strong_sunlight"],
+      "default_representatives": ["strong_sunlight"]
     }
+  },
+  "camera": {
+    "enabled": false
   }
 }

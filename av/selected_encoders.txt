@@ -1,4 +1,4 @@
 pointpillars
 pointrcnn
-pv_rcnn
+pvrcnn
 centerpoint

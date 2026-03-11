@@ -41,8 +41,8 @@ This split lets students isolate failures cleanly:
   - includes local model assets for DINOv2 and SigLIP plus a vendored RT-1
     snapshot
 - `av/`
-  - copied encoder workspace with smoke tooling
-  - not yet documented at the same level as `embodied_ai/`
+  - LiDAR inference pack aligned with current AV stage-2 framework
+  - includes staged sample episode + runtime inference entrypoint
 - `medical/`
   - copied encoder workspace with smoke tooling
   - not yet documented at the same level as `embodied_ai/`

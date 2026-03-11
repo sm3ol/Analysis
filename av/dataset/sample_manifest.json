@@ -1,0 +1,18 @@
+{
+  "dataset": "nuScenes",
+  "episode_file": "episode_000001.npz",
+  "data_root": "Taxonomy_experiment/AV_experiment/data/nuscenes/sweeps/LIDAR_TOP",
+  "stream_name": "n008-2018-08-01-15-16-36-0400",
+  "episode_len": 180,
+  "clean_prefix": 50,
+  "point_feature_dim": 5,
+  "max_points": 1024,
+  "frame_count": 180,
+  "frame_names_head": [
+    "n008-2018-08-01-15-16-36-0400__LIDAR_TOP__1533151061597292.pcd.bin",
+    "n008-2018-08-01-15-16-36-0400__LIDAR_TOP__1533151061646948.pcd.bin",
+    "n008-2018-08-01-15-16-36-0400__LIDAR_TOP__1533151061697294.pcd.bin",
+    "n008-2018-08-01-15-16-36-0400__LIDAR_TOP__1533151061747049.pcd.bin",
+    "n008-2018-08-01-15-16-36-0400__LIDAR_TOP__1533151061797376.pcd.bin"
+  ]
+}
