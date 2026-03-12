@@ -1,70 +1,96 @@
 # AV Inference Pack (LiDAR Only)
 
-This folder is now aligned to the current AV stage-2 training stack under:
-- `training/AV/framework`
+This folder is synced to the AV stage-2 stack in `training/AV/framework`.
 
-It is intended for inference-time checks while training is running, with either:
-- trained weights (preferred), or
-- dummy scorer/projector weights (temporary smoke mode).
+## Scope
 
-## What Is Included
+Supported real encoder names:
+- `pointpillars`
+- `pointrcnn`
+- `pvrcnn`
+- `centerpoint`
 
-- Real encoder names aligned with training:
-  - `pointpillars`
-  - `pointrcnn`
-  - `pvrcnn`
-  - `centerpoint`
-- Current taxonomy/config snapshot:
-  - `configs/av_taxonomy_manifest.json`
-- Realistic staged episode artifacts:
-  - `dataset/episode_000001.npz`
-  - `dataset/sample_manifest.json`
-- Inference tooling:
-  - `tools/run_inference_episode.py`
+Included:
+- staged realistic sample episode: `dataset/episode_000001.npz`
+- one-episode inference runner: `tools/run_inference_episode.py`
+- encoder-only runner: `tools/run_encoder_only_episode.py`
+- strict runtime preflight checker: `tools/preflight_inference.py`
+- wrappers:
+  - `preflight_inference.sh`
+  - `run_encoder_only.sh`
   - `run_real_with_scorer.sh`
-- Inference smoke:
-  - `smoke_inference.sh`
-- Episode builder:
-  - `tools/build_sample_episode.py`
-  - `build_sample_episode.sh`
+  - `run_<encoder>_encoder_only.sh` for each of 4 encoders
+  - `run_<encoder>_with_scorer.sh` for each of 4 encoders
+  - `verify_all_encoders.sh` (single pass/fail wrapper)
 
-Legacy taxonomy-metrics scripts remain in this folder for compatibility.
+## Prerequisites
 
-## Environment
+This pack depends on the parent project layout and code:
+- `training/AV/framework`
+- `training/playground/OpenPCDet`
+- `training/AV/checkpoints/*.pth`
+
+If you clone only `Analysis`, inference will not run.
+
+## Environment Setup
+
+Recommended: use the project AV env (`.venv_av`) from the workspace root.
+
+If creating a local env under `Analysis/av`:
 
 ```bash
 cd Analysis/av
 bash setup_env.sh
 ```
 
-If you already use the project AV environment from the parent workspace, you can
-reuse it instead of creating `.venv`.
+For `pvrcnn`, OpenPCDet CUDA ops must be available (`spconv`, pointnet2 stack). After activating your env, run:
 
-## Build/Refresh the Staged Episode
+```bash
+pip install -e ../../training/playground/OpenPCDet
+```
 
-Default source uses real nuScenes sweeps:
+If this build step fails, fix CUDA/compiler compatibility first, then rerun preflight.
+
+## Strict Readiness Check (Required)
+
+Build or refresh the staged episode:
 
 ```bash
 cd Analysis/av
 bash build_sample_episode.sh
 ```
 
-Custom source:
+Run strict preflight for all 4 encoders:
 
 ```bash
-bash build_sample_episode.sh /path/to/nuscenes/sweeps/LIDAR_TOP
+cd Analysis/av
+DEVICE=cuda:1 bash preflight_inference.sh
 ```
 
-## Run Inference on One Episode
+Preflight validates, per encoder:
+- checkpoint file presence and strict load status
+- one-step forward pass through adapter + projector + scorers
+- embedding shape/stats output
 
-Default (dummy scorer/projector if no trained checkpoint is provided):
+If preflight exits with success and reports `"ready_all": true`, the machine is ready for inference with all listed encoders.
+
+## Run Inference
+
+Encoder only (no scorer state machine):
+
+```bash
+cd Analysis/av
+DEVICE=cuda:1 bash run_encoder_only.sh centerpoint
+```
+
+Encoder + scorer:
 
 ```bash
 cd Analysis/av
 bash run_real_with_scorer.sh centerpoint
 ```
 
-With trained weights from AV training output:
+With trained AV stage-2 weights:
 
 ```bash
 cd Analysis/av
@@ -74,19 +100,46 @@ DEVICE="cuda:1" \
 bash run_real_with_scorer.sh centerpoint
 ```
 
-Output JSON is written under:
-- `outputs/inference_<encoder>.json`
+## Per-Encoder Scripts
 
-Quick multi-encoder smoke:
+Encoder-only files:
+- `run_pointpillars_encoder_only.sh`
+- `run_pointrcnn_encoder_only.sh`
+- `run_pvrcnn_encoder_only.sh`
+- `run_centerpoint_encoder_only.sh`
+
+Encoder+scorer files:
+- `run_pointpillars_with_scorer.sh`
+- `run_pointrcnn_with_scorer.sh`
+- `run_pvrcnn_with_scorer.sh`
+- `run_centerpoint_with_scorer.sh`
+
+Examples:
 
 ```bash
 cd Analysis/av
-bash smoke_inference.sh
+DEVICE=cuda:1 bash run_pointpillars_encoder_only.sh
+DEVICE=cuda:1 bash run_pointpillars_with_scorer.sh
 ```
 
-## Current Controller Defaults (Synced)
+## One-Shot Verification
 
-This pack is synced to current AV controller defaults:
+Run all 4 encoders in both modes and report PASS/FAIL:
+
+```bash
+cd Analysis/av
+DEVICE=cuda:1 bash verify_all_encoders.sh
+```
+
+Outputs:
+- `outputs/preflight_inference_*.json`
+- `outputs/encoder_only_<encoder>.json`
+- `outputs/encoder_only_<encoder>.npz`
+- `outputs/inference_<encoder>.json`
+- `outputs/verify_all/*.log`
+
+## Current Controller Defaults
+
 - `recover_required_steps = 25`
 - `recover_rewarm_steps = 25`
 - `recover_anchor_mode = strict`
@@ -95,7 +148,5 @@ This pack is synced to current AV controller defaults:
 
 ## Notes
 
-- This is LiDAR-only in current AV stage-2 scope.
-- `pvrcnn` relies on OpenPCDet/spconv availability in the active environment.
-- Until training finishes, dummy scorer/projector behavior is expected to be
-  unstable; use it only for pipeline sanity, not quality evaluation.
+- LiDAR-only for current AV stage-2.
+- `allow_dummy_weights=1` is intended only for temporary smoke checks while full training checkpoints are not available.

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -164,8 +165,19 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    invocation_cwd = Path.cwd()
+    episode_path = Path(args.episode_path)
+    if not episode_path.is_absolute():
+        episode_path = (invocation_cwd / episode_path).resolve()
+    output_json = Path(args.output_json)
+    if not output_json.is_absolute():
+        output_json = (invocation_cwd / output_json).resolve()
+    checkpoint_path = Path(args.checkpoint_path).resolve() if str(args.checkpoint_path).strip() else None
+    brain_b_stats_path = Path(args.brain_b_stats).resolve() if str(args.brain_b_stats).strip() else None
+
+    os.chdir(PROJECT_ROOT)
     device = resolve_device(args.device)
-    episode = load_episode(Path(args.episode_path))
+    episode = load_episode(episode_path)
     points = episode["points"]
     clean_prefix = int(episode["clean_prefix"])
 
@@ -180,8 +192,8 @@ def main() -> None:
         if not default_ckpt.is_absolute():
             default_ckpt = PROJECT_ROOT / default_ckpt
         cfg.model.checkpoint_path = str(default_ckpt)
-    if str(args.checkpoint_path).strip():
-        cfg.model.checkpoint_path = str(args.checkpoint_path).strip()
+    if checkpoint_path is not None:
+        cfg.model.checkpoint_path = str(checkpoint_path)
     cfg.temporal.recover_required_steps = int(args.recover_required_steps)
     cfg.temporal.recover_rewarm_steps = int(args.recover_rewarm_steps)
     cfg.temporal.recover_anchor_mode = str(args.recover_anchor_mode)
@@ -193,7 +205,7 @@ def main() -> None:
     _print_checkpoint_status(getattr(components.adapter, "checkpoint_status", {}))
     trainer = UnifiedBeliefTrainer(cfg, components, device=device)
 
-    model_checkpoint = Path(args.checkpoint_path) if str(args.checkpoint_path).strip() else None
+    model_checkpoint = checkpoint_path
     loaded_trained = False
     if model_checkpoint and model_checkpoint.exists():
         payload = torch.load(model_checkpoint, map_location=str(device), weights_only=False)
@@ -205,7 +217,7 @@ def main() -> None:
     elif not bool(int(args.allow_dummy_weights)):
         raise RuntimeError("trained checkpoint was not provided and allow_dummy_weights=0")
 
-    brain_b_stats = Path(args.brain_b_stats) if str(args.brain_b_stats).strip() else None
+    brain_b_stats = brain_b_stats_path
     if brain_b_stats and brain_b_stats.exists():
         stats = load_clean_reference_stats(brain_b_stats, device=str(device))
         trainer.components.brain_b.update_stats(stats)
@@ -258,7 +270,7 @@ def main() -> None:
     result = {
         "encoder": cfg.encoder_name,
         "device": str(device),
-        "episode_path": str(args.episode_path),
+        "episode_path": str(episode_path),
         "stream_name": episode["stream_name"],
         "episode_len": int(points.shape[0]),
         "point_shape": [int(v) for v in points.shape],
@@ -272,7 +284,7 @@ def main() -> None:
         "trace_head": out_rows[:10],
     }
 
-    out_path = Path(args.output_json)
+    out_path = output_json
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
     print(json.dumps(result, indent=2))

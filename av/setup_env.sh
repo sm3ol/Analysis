@@ -8,4 +8,8 @@ if [[ "$MODE" == "smoke" ]]; then
   pip install "numpy>=1.24"
 else
   pip install -r requirements.txt
+  # Optional but recommended for full real-backbone inference checks.
+  if [[ -f "../../training/playground/OpenPCDet/requirements.txt" ]]; then
+    pip install -r ../../training/playground/OpenPCDet/requirements.txt
+  fi
 fi
