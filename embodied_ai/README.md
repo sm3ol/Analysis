@@ -18,7 +18,7 @@ Important:
 - if the goal is simply to score data, students should use the normal scoring
   scripts and ignore the recovery scripts unless they explicitly want to test
   corruption handling
-- the dedicated scoring guide is in `SCORING_MANUAL.md`
+- scoring guidance is consolidated in this README
 - the normal student workflow below is documented as strict GPU-only
 - if a command cannot run on the selected GPU, it should fail with an explicit
   error
@@ -254,6 +254,20 @@ If the student wants to:
 - intentionally test corruption handling and temporal recovery:
   - `bash <encoder>/run_brain_a_recovery.sh`
   - `bash <encoder>/run_brain_a_brain_b_recovery.sh`
+
+
+## Practical Run Order
+
+For normal scoring on one encoder, use this order:
+
+1. `bash smoke_test.sh`
+2. `bash <encoder>/run_encoder_only.sh`
+3. `bash <encoder>/run_with_scorer.sh`
+4. `bash <encoder>/run_real_with_scorer.sh`
+5. `bash run_real_runtime_loop.sh <encoder> [iterations]` (only when repeated profiling is needed)
+
+Use recovery scripts only when the explicit goal is to validate corruption handling
+and temporal recovery behavior.
 
 ## Strict GPU Device Matrix
 
