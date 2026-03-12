@@ -35,6 +35,86 @@ Important:
 - `dataset/`: one staged local sample episode used by the real-data checks
 - `outputs/`: JSON results, corrupted samples, and debug artifacts
 
+Top-level per-encoder inference scripts (hardware profiling entry points):
+
+| Script | What it does |
+|---|---|
+| `run_dinov2_encoder_only.sh` | DINOv2 encoder only on real episode |
+| `run_dinov2_with_scorer.sh` | DINOv2 + full scorer on real episode |
+| `run_openvla_encoder_only.sh` | OpenVLA encoder only on real episode |
+| `run_openvla_with_scorer.sh` | OpenVLA + full scorer on real episode |
+| `run_siglip_encoder_only.sh` | SigLIP encoder only on real episode |
+| `run_siglip_with_scorer.sh` | SigLIP + full scorer on real episode |
+| `run_rt1_encoder_only.sh` | RT-1 encoder only on real episode |
+| `run_rt1_with_scorer.sh` | RT-1 + full scorer on real episode |
+| `verify_all_encoders.sh` | Runs all 8 above, prints pass/fail table |
+
+Each `run_<encoder>_with_scorer.sh` runs the full pipeline:
+pooling → shared projector → Brain A → Brain B → temporal controller
+
+Checkpoints are pinned to the latest training runs from `training/Embodied_AI/outputs/`.
+Override with `EMBODIED_CHECKPOINT_ROOT=<path>` if needed.
+
+
+## Hardware Profiling — Quick Start
+
+These are the commands the hardware team needs. Run from `Analysis/embodied_ai/`.
+
+### Encoder only (no scorer)
+
+```bash
+source "/home/dal574571/ASPLOS 27/.venv_openx/bin/activate"
+cd "/home/dal574571/ASPLOS 27/Analysis/embodied_ai"
+
+bash run_dinov2_encoder_only.sh
+bash run_openvla_encoder_only.sh
+bash run_siglip_encoder_only.sh
+bash run_rt1_encoder_only.sh
+```
+
+### Encoder + full scorer (pooling → projector → Brain A → Brain B → temporal controller)
+
+```bash
+source "/home/dal574571/ASPLOS 27/.venv_openx/bin/activate"
+cd "/home/dal574571/ASPLOS 27/Analysis/embodied_ai"
+
+bash run_dinov2_with_scorer.sh
+bash run_openvla_with_scorer.sh
+bash run_siglip_with_scorer.sh
+bash run_rt1_with_scorer.sh
+```
+
+### Run all at once and get a pass/fail table
+
+```bash
+source "/home/dal574571/ASPLOS 27/.venv_openx/bin/activate"
+cd "/home/dal574571/ASPLOS 27/Analysis/embodied_ai"
+bash verify_all_encoders.sh
+```
+
+Example output:
+```
+encoder    | encoder_only   | with_scorer
+-----------+----------------+--------------
+dinov2     | PASS           | PASS
+openvla    | PASS           | PASS
+siglip     | PASS           | PASS
+rt1        | PASS           | PASS
+
+[DONE] all encoder checks passed
+```
+
+Logs are saved to `outputs/verify_all/<encoder>_encoder_only.log` and
+`outputs/verify_all/<encoder>_with_scorer.log`.
+
+Force a specific device:
+
+```bash
+DEVICE=cuda bash verify_all_encoders.sh
+DEVICE=cpu  bash verify_all_encoders.sh
+```
+
+---
 
 ## Training-Integrated Inference (Hardware Profiling)
 
@@ -155,9 +235,15 @@ This is the direct map from student intent to script.
 If the student wants to:
 - verify the shared scorer logic only:
   - `bash smoke_test.sh`
-- verify one encoder without the scorer:
+- run one encoder on the real episode without the scorer (top-level shortcut):
+  - `bash run_<encoder>_encoder_only.sh`
+- run one encoder on the real episode with the full scorer (top-level shortcut):
+  - `bash run_<encoder>_with_scorer.sh`
+- run all encoders both ways and see a pass/fail table:
+  - `bash verify_all_encoders.sh`
+- verify one encoder without the scorer (synthetic):
   - `bash <encoder>/run_encoder_only.sh`
-- verify one encoder with the scorer:
+- verify one encoder with the scorer (synthetic):
   - `bash <encoder>/run_with_scorer.sh`
 - verify one encoder on the staged real sample without the scorer:
   - `bash <encoder>/run_real_encoder_only.sh`
@@ -388,6 +474,14 @@ Typical outputs:
   - `outputs/<encoder>_brain_a_recovery.json`
 - `<encoder>/run_brain_a_brain_b_recovery.sh`:
   - `outputs/<encoder>_brain_a_brain_b_recovery.json`
+- `run_<encoder>_encoder_only.sh`:
+  - `outputs/<encoder>_real_adapter_check.json`
+- `run_<encoder>_with_scorer.sh`:
+  - `outputs/<encoder>_real_runtime_check.json`
+  - `outputs/<encoder>_real_runtime_check_brain_b_stats.npz`
+- `verify_all_encoders.sh`:
+  - `outputs/verify_all/<encoder>_encoder_only.log`
+  - `outputs/verify_all/<encoder>_with_scorer.log`
 - `run_real_runtime_loop.sh`:
   - `outputs/loops/<encoder>/...`
 
