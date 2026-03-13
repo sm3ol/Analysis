@@ -14,23 +14,23 @@ import numpy as np
 import torch
 
 
-def _resolve_project_root() -> Path:
-    # .../Analysis/av/tools -> .../<project-root>
-    return Path(__file__).resolve().parents[3]
+def _resolve_av_root() -> Path:
+    # .../Analysis/av/tools -> .../Analysis/av
+    return Path(__file__).resolve().parents[1]
 
 
-PROJECT_ROOT = _resolve_project_root()
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+AV_ROOT = _resolve_av_root()
+if str(AV_ROOT) not in sys.path:
+    sys.path.insert(0, str(AV_ROOT))
 
-from training.AV.framework.adapters.checkpoint_catalog import (  # noqa: E402
+from framework.adapters.checkpoint_catalog import (  # noqa: E402
     default_checkpoint_path,
     official_checkpoint_for_encoder,
 )
-from training.AV.framework.config import FrameworkConfig  # noqa: E402
-from training.AV.framework.core.pooling import pool_adapter_output  # noqa: E402
-from training.AV.framework.train_belief import build_components  # noqa: E402
-from training.AV.framework.types import TrainBatch  # noqa: E402
+from framework.config import FrameworkConfig  # noqa: E402
+from framework.core.pooling import pool_adapter_output  # noqa: E402
+from framework.train_belief import build_components  # noqa: E402
+from framework.types import TrainBatch  # noqa: E402
 
 DEFAULT_ENCODERS = ["pointpillars", "pointrcnn", "pvrcnn", "centerpoint"]
 
@@ -145,7 +145,7 @@ def run_encoder_check(
         cfg.data.point_feature_dim = int(ckpt_entry.expected_point_feature_dim)
         ckpt_path = default_checkpoint_path(cfg.encoder_name)
         if not ckpt_path.is_absolute():
-            ckpt_path = PROJECT_ROOT / ckpt_path
+            ckpt_path = AV_ROOT / ckpt_path
         cfg.model.checkpoint_path = str(ckpt_path)
         if require_pretrained and not ckpt_path.exists():
             raise FileNotFoundError(f"missing checkpoint: {ckpt_path}")
@@ -216,13 +216,13 @@ def main() -> None:
         episode_path = (invocation_cwd / episode_path).resolve()
     output_json = Path(args.output_json).resolve() if str(args.output_json).strip() else None
 
-    os.chdir(PROJECT_ROOT)
+    os.chdir(AV_ROOT)
     device = resolve_device(args.device)
     episode = load_episode(episode_path)
     encoders = parse_encoder_list(args.encoders)
 
     summary = {
-        "project_root": str(PROJECT_ROOT),
+        "project_root": str(AV_ROOT),
         "device": str(device),
         "episode_path": str(episode_path),
         "encoders": encoders,

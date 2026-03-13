@@ -104,7 +104,7 @@ def build_episode(
         max_points=np.int64(max_points),
     )
 
-    root_hint = Path(__file__).resolve().parents[3]
+    root_hint = Path(__file__).resolve().parents[2]
     try:
         data_root_text = str(data_root.resolve().relative_to(root_hint.resolve()))
     except Exception:
@@ -131,7 +131,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--data_root",
         type=str,
-        default="Taxonomy_experiment/AV_experiment/data/nuscenes/sweeps/LIDAR_TOP",
+        default="dataset/raw/LIDAR_TOP",
     )
     p.add_argument("--episode_len", type=int, default=180)
     p.add_argument("--clean_prefix", type=int, default=50)

@@ -1,8 +1,8 @@
-# AV Inference Pack (LiDAR Only)
+# AV Inference Pack (Standalone LiDAR)
 
-This folder is synced to the AV stage-2 stack in `training/AV/framework`.
+This folder is self-contained for AV stage-2 inference. The AV tools import only from `Analysis/av`, not from the sibling training repo.
 
-## Scope
+## Included
 
 Supported real encoder names:
 - `pointpillars`
@@ -11,142 +11,81 @@ Supported real encoder names:
 - `centerpoint`
 
 Included:
-- staged realistic sample episode: `dataset/episode_000001.npz`
-- one-episode inference runner: `tools/run_inference_episode.py`
-- encoder-only runner: `tools/run_encoder_only_episode.py`
-- strict runtime preflight checker: `tools/preflight_inference.py`
-- wrappers:
-  - `preflight_inference.sh`
-  - `run_encoder_only.sh`
-  - `run_real_with_scorer.sh`
-  - `run_<encoder>_encoder_only.sh` for each of 4 encoders
-  - `run_<encoder>_with_scorer.sh` for each of 4 encoders
-  - `verify_all_encoders.sh` (single pass/fail wrapper)
-
-## Prerequisites
-
-This pack depends on the parent project layout and code:
-- `training/AV/framework`
-- `training/playground/OpenPCDet`
-- `training/AV/checkpoints/*.pth`
-
-If you clone only `Analysis`, inference will not run.
+- local AV framework: `framework/`
+- vendored PV-RCNN backend: `vendor/openpcdet/`
+- local checkpoints: `checkpoints/`
+- local Brain-B stats artifact: `artifacts/brain_b_clean_stats.npz`
+- staged sample episode: `dataset/episode_000001.npz`
+- tools:
+  - `tools/run_inference_episode.py`
+  - `tools/run_encoder_only_episode.py`
+  - `tools/preflight_inference.py`
+  - `tools/download_official_checkpoints.py`
 
 ## Environment Setup
-
-Recommended: use the project AV env (`.venv_av`) from the workspace root.
-
-If creating a local env under `Analysis/av`:
 
 ```bash
 cd Analysis/av
 bash setup_env.sh
 ```
 
-For `pvrcnn`, OpenPCDet CUDA ops must be available (`spconv`, pointnet2 stack). After activating your env, run:
+For `pvrcnn`, `spconv` and CUDA-compatible pointnet2 builds still need to work on the machine. The repo is standalone from `training`, but `pvrcnn` still depends on those third-party CUDA packages.
 
-```bash
-pip install -e ../../training/playground/OpenPCDet
-```
+## Local Assets
 
-If this build step fails, fix CUDA/compiler compatibility first, then rerun preflight.
+Default local paths:
+- checkpoints: `Analysis/av/checkpoints/*.pth`
+- Brain-B stats: `Analysis/av/artifacts/brain_b_clean_stats.npz`
+- vendored OpenPCDet: `Analysis/av/vendor/openpcdet`
 
-## Strict Readiness Check (Required)
-
-Build or refresh the staged episode:
-
-```bash
-cd Analysis/av
-bash build_sample_episode.sh
-```
-
-Run strict preflight for all 4 encoders:
+If checkpoints are missing, download them with:
 
 ```bash
 cd Analysis/av
-DEVICE=cuda:1 bash preflight_inference.sh
+python3 tools/download_official_checkpoints.py --encoders all
 ```
 
-Preflight validates, per encoder:
-- checkpoint file presence and strict load status
+## Strict Readiness Check
+
+```bash
+cd Analysis/av
+DEVICE=cuda:0 bash preflight_inference.sh
+```
+
+This validates, per encoder:
+- checkpoint presence and strict load status
 - one-step forward pass through adapter + projector + scorers
-- embedding shape/stats output
-
-If preflight exits with success and reports `"ready_all": true`, the machine is ready for inference with all listed encoders.
+- embedding/scorer stats output
 
 ## Run Inference
 
-Encoder only (no scorer state machine):
+Encoder only:
 
 ```bash
 cd Analysis/av
-DEVICE=cuda:1 bash run_encoder_only.sh centerpoint
+DEVICE=cuda:0 bash run_encoder_only.sh centerpoint
 ```
 
 Encoder + scorer:
 
 ```bash
 cd Analysis/av
-bash run_real_with_scorer.sh centerpoint
+DEVICE=cuda:0 bash run_real_with_scorer.sh centerpoint
 ```
 
 With trained AV stage-2 weights:
 
 ```bash
 cd Analysis/av
-CHECKPOINT_PATH="/path/to/av_stage2_checkpoint.pt" \
-BRAIN_B_STATS="/path/to/brain_b_clean_stats.npz" \
-DEVICE="cuda:1" \
-bash run_real_with_scorer.sh centerpoint
+CHECKPOINT_PATH="/path/to/av_stage2_checkpoint.pt" BRAIN_B_STATS="/path/to/brain_b_clean_stats.npz" DEVICE="cuda:0" bash run_real_with_scorer.sh centerpoint
 ```
 
-## Per-Encoder Scripts
+## Sample Episode
 
-Encoder-only files:
-- `run_pointpillars_encoder_only.sh`
-- `run_pointrcnn_encoder_only.sh`
-- `run_pvrcnn_encoder_only.sh`
-- `run_centerpoint_encoder_only.sh`
-
-Encoder+scorer files:
-- `run_pointpillars_with_scorer.sh`
-- `run_pointrcnn_with_scorer.sh`
-- `run_pvrcnn_with_scorer.sh`
-- `run_centerpoint_with_scorer.sh`
-
-Examples:
+A bundled staged sample is already included under `dataset/episode_000001.npz`.
+To rebuild it from raw LiDAR frames, pass an explicit root or set `DATA_ROOT`:
 
 ```bash
 cd Analysis/av
-DEVICE=cuda:1 bash run_pointpillars_encoder_only.sh
-DEVICE=cuda:1 bash run_pointpillars_with_scorer.sh
+DATA_ROOT=/path/to/LIDAR_TOP bash build_sample_episode.sh
 ```
-
-## One-Shot Verification
-
-Run all 4 encoders in both modes and report PASS/FAIL:
-
-```bash
-cd Analysis/av
-DEVICE=cuda:1 bash verify_all_encoders.sh
-```
-
-Outputs:
-- `outputs/preflight_inference_*.json`
-- `outputs/encoder_only_<encoder>.json`
-- `outputs/encoder_only_<encoder>.npz`
-- `outputs/inference_<encoder>.json`
-- `outputs/verify_all/*.log`
-
-## Current Controller Defaults
-
-- `recover_required_steps = 25`
-- `recover_rewarm_steps = 25`
-- `recover_anchor_mode = strict`
-- `suspicious_threshold_a = 0.95`
-- `clean_like_threshold_b = 0.95`
-
-## Notes
-
-- LiDAR-only for current AV stage-2.
-- `allow_dummy_weights=1` is intended only for temporary smoke checks while full training checkpoints are not available.

@@ -14,30 +14,30 @@ import numpy as np
 import torch
 
 
-def _resolve_project_root() -> Path:
-    # .../Analysis/av/tools -> .../<project-root>
-    return Path(__file__).resolve().parents[3]
+def _resolve_av_root() -> Path:
+    # .../Analysis/av/tools -> .../Analysis/av
+    return Path(__file__).resolve().parents[1]
 
 
-PROJECT_ROOT = _resolve_project_root()
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+AV_ROOT = _resolve_av_root()
+if str(AV_ROOT) not in sys.path:
+    sys.path.insert(0, str(AV_ROOT))
 
-from training.AV.framework.adapters.checkpoint_catalog import (  # noqa: E402
+from framework.adapters.checkpoint_catalog import (  # noqa: E402
     default_checkpoint_path,
     official_checkpoint_for_encoder,
 )
-from training.AV.framework.config import FrameworkConfig  # noqa: E402
-from training.AV.framework.core.brain_b_stats import (  # noqa: E402
+from framework.config import FrameworkConfig  # noqa: E402
+from framework.core.brain_b_stats import (  # noqa: E402
     fit_clean_reference_stats,
     load_clean_reference_stats,
 )
-from training.AV.framework.core.pooling import pool_adapter_output  # noqa: E402
-from training.AV.framework.train_belief import (  # noqa: E402
+from framework.core.pooling import pool_adapter_output  # noqa: E402
+from framework.train_belief import (  # noqa: E402
     UnifiedBeliefTrainer,
     build_components,
 )
-from training.AV.framework.types import TrainBatch  # noqa: E402
+from framework.types import TrainBatch  # noqa: E402
 
 
 def resolve_device(arg: str) -> torch.device:
@@ -175,7 +175,7 @@ def main() -> None:
     checkpoint_path = Path(args.checkpoint_path).resolve() if str(args.checkpoint_path).strip() else None
     brain_b_stats_path = Path(args.brain_b_stats).resolve() if str(args.brain_b_stats).strip() else None
 
-    os.chdir(PROJECT_ROOT)
+    os.chdir(AV_ROOT)
     device = resolve_device(args.device)
     episode = load_episode(episode_path)
     points = episode["points"]
@@ -190,7 +190,7 @@ def main() -> None:
         cfg.data.point_feature_dim = int(ckpt_entry.expected_point_feature_dim)
         default_ckpt = default_checkpoint_path(cfg.encoder_name)
         if not default_ckpt.is_absolute():
-            default_ckpt = PROJECT_ROOT / default_ckpt
+            default_ckpt = AV_ROOT / default_ckpt
         cfg.model.checkpoint_path = str(default_ckpt)
     if checkpoint_path is not None:
         cfg.model.checkpoint_path = str(checkpoint_path)

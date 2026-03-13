@@ -4,3 +4,8 @@
 embodied_ai/outputs/
 av/outputs/
 medical/outputs/
+av/checkpoints/
+av/artifacts/
+av/vendor/openpcdet/**/__pycache__/
+av/vendor/openpcdet/**/*.pyc
+av/vendor/openpcdet/**/*.so
