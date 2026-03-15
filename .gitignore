@@ -9,3 +9,7 @@ av/artifacts/
 av/vendor/openpcdet/**/__pycache__/
 av/vendor/openpcdet/**/*.pyc
 av/vendor/openpcdet/**/*.so
+av/.cursorrules
+av/.cursor/
+av/CLAUDE.md
+av/.claude/

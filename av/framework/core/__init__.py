@@ -14,6 +14,11 @@ from .family_md import (
     predict_family_md,
     save_family_md_stats,
 )
+from .online_calibration import (
+    OnlineCalibrationConfig,
+    OnlineScoreCalibrator,
+    exponential_drop_mapper,
+)
 
 __all__ = [
     "SharedProjectionHead",
@@ -32,4 +37,7 @@ __all__ = [
     "enroll_family_md",
     "save_family_md_stats",
     "load_family_md_stats",
+    "OnlineCalibrationConfig",
+    "OnlineScoreCalibrator",
+    "exponential_drop_mapper",
 ]

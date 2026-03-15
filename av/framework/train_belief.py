@@ -36,6 +36,7 @@ if __package__ in (None, ""):
     )
     from framework.core.pooling import pool_adapter_output
     from framework.core.projection import SharedProjectionHead
+    from framework.core.online_calibration import OnlineCalibrationConfig, OnlineScoreCalibrator
     from framework.core.scorer import BrainAScorer, BrainBScorer
     from framework.core.temporal import ReliabilityMode, ReliabilityState, ReliabilityStateMachine
     from framework.losses import SupConLoss, build_delta_embeddings
@@ -63,6 +64,7 @@ else:
     )
     from .core.pooling import pool_adapter_output
     from .core.projection import SharedProjectionHead
+    from .core.online_calibration import OnlineCalibrationConfig, OnlineScoreCalibrator
     from .core.scorer import BrainAScorer, BrainBScorer
     from .core.temporal import ReliabilityMode, ReliabilityState, ReliabilityStateMachine
     from .losses import SupConLoss, build_delta_embeddings
@@ -90,6 +92,7 @@ class UnifiedBeliefTrainer:
         self.components = components
         self.device = device
         self.state_by_episode: dict[int, ReliabilityState] = {}
+        self.calibrator_by_episode: dict[int, OnlineScoreCalibrator] = {}
 
         params = [
             p
@@ -111,6 +114,32 @@ class UnifiedBeliefTrainer:
     def reset_stream_state(self) -> None:
         """Reset per-episode temporal state."""
         self.state_by_episode.clear()
+        self.calibrator_by_episode.clear()
+
+    def _online_calibration_enabled(self) -> bool:
+        if not bool(getattr(self.config.runtime, "enable_online_calibration", False)):
+            return False
+        if self.components.adapter.training and not bool(
+            getattr(self.config.runtime, "online_calibration_apply_in_train", False)
+        ):
+            return False
+        return True
+
+    def _build_episode_calibrator(self) -> OnlineScoreCalibrator:
+        cfg = OnlineCalibrationConfig(
+            prefix_len=int(getattr(self.config.runtime, "online_calibration_prefix_len", self.config.temporal.clean_prefix)),
+            mode=str(getattr(self.config.runtime, "online_calibration_mode", "simple")),
+            alpha=float(getattr(self.config.runtime, "online_calibration_alpha", 10.0)),
+            gamma=float(getattr(self.config.runtime, "online_calibration_gamma", 1.0)),
+            eps=float(getattr(self.config.runtime, "online_calibration_eps", 1e-6)),
+            min_score=float(getattr(self.config.runtime, "online_calibration_min_score", 0.05)),
+            max_score=float(getattr(self.config.runtime, "online_calibration_max_score", 1.0)),
+            emit_before_ready=bool(getattr(self.config.runtime, "online_calibration_emit_before_ready", True)),
+            use_piecewise_drop=bool(getattr(self.config.runtime, "online_calibration_use_piecewise_drop", False)),
+            piecewise_knee=float(getattr(self.config.runtime, "online_calibration_piecewise_knee", 0.1)),
+            piecewise_tail_mult=float(getattr(self.config.runtime, "online_calibration_piecewise_tail_mult", 3.0)),
+        )
+        return OnlineScoreCalibrator(config=cfg)
 
     def _move_batch_to_device(self, batch: TrainBatch) -> TrainBatch:
         metadata: dict[str, Any] = {}
@@ -252,6 +281,8 @@ class UnifiedBeliefTrainer:
         ra_list = []
         rb_list = []
         final_list = []
+        raw_final_list = []
+        calibrated_final_list = []
         suspicious_list = []
         alarm_list = []
         mode_ids = []
@@ -330,9 +361,18 @@ class UnifiedBeliefTrainer:
                 state.belief_ema = ema_alpha * belief_i.detach() + (1.0 - ema_alpha) * z_i.detach()
 
             if step_result.state.mode in (ReliabilityMode.PERSISTENT, ReliabilityMode.RECOVERING):
-                final_rel = r_b
+                raw_final_rel = r_b
             else:
-                final_rel = r_a
+                raw_final_rel = r_a
+            if self._online_calibration_enabled():
+                calibrator = self.calibrator_by_episode.get(episode_key)
+                if calibrator is None:
+                    calibrator = self._build_episode_calibrator()
+                    self.calibrator_by_episode[episode_key] = calibrator
+                calibrated_value = calibrator.observe(float(raw_final_rel.detach().item()))
+                final_rel = torch.tensor(calibrated_value, device=z.device, dtype=raw_final_rel.dtype)
+            else:
+                final_rel = raw_final_rel
             alarm = float(suspicious or step_result.state.mode != ReliabilityMode.CLEAN)
 
             self.state_by_episode[episode_key] = step_result.state
@@ -341,6 +381,8 @@ class UnifiedBeliefTrainer:
 
             ra_list.append(r_a)
             rb_list.append(r_b)
+            raw_final_list.append(raw_final_rel)
+            calibrated_final_list.append(final_rel)
             final_list.append(final_rel)
             suspicious_list.append(torch.tensor(float(suspicious), device=z.device))
             alarm_list.append(torch.tensor(alarm, device=z.device))
@@ -372,6 +414,8 @@ class UnifiedBeliefTrainer:
                 "md_clean": torch.stack(md_clean_list, dim=0),
                 "r_b_recover": torch.stack(r_b_recover_list, dim=0),
                 "d_bad": torch.stack(d_bad_list, dim=0),
+                "raw_final_reliability": torch.stack(raw_final_list, dim=0),
+                "calibrated_final_reliability": torch.stack(calibrated_final_list, dim=0),
             },
         )
         if return_projected:

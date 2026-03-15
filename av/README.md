@@ -1,26 +1,64 @@
 # AV Inference Pack (Standalone LiDAR)
 
-This folder is self-contained for AV stage-2 inference. The AV tools import only from `Analysis/av`, not from the sibling training repo.
+Standalone inference pack for the AV two-brain reliability scorer.
+Supports four LiDAR encoders — **PointPillars**, **PointRCNN**, **PV-RCNN**, **CenterPoint** —
+with a learned Brain A (temporal anomaly) + frozen Brain B (Mahalanobis distance) scoring pipeline
+and streaming online calibration.
 
-## Included
+## Folder Structure
 
-Supported real encoder names:
-- `pointpillars`
-- `pointrcnn`
-- `pvrcnn`
-- `centerpoint`
+```
+Analysis/av/
+├── framework/                  # Core AV framework
+│   ├── adapters/               # Per-encoder LiDAR adapters
+│   ├── core/                   # Scorers, temporal state, online calibration
+│   ├── losses/                 # Supervised contrastive loss
+│   ├── validation/             # Metrics (AUROC, episode traces)
+│   ├── config.py               # All configuration dataclasses
+│   ├── paths.py                # Path constants (all paths resolve here)
+│   ├── train_belief.py         # Trainer / inference entry point
+│   └── types.py                # Data types (TrainBatch, StepOutput)
+├── tools/                      # Inference & utility scripts
+│   ├── preflight_inference.py  # Strict readiness check
+│   ├── run_encoder_only_episode.py
+│   ├── run_inference_episode.py
+│   ├── build_sample_episode.py
+│   └── download_official_checkpoints.py
+├── vendor/openpcdet/           # Vendored OpenPCDet backbone
+├── checkpoints/                # Pretrained encoder weights (.pth)
+├── artifacts/                  # Stage-2 checkpoints, Brain-B stats, family MD
+├── dataset/                    # Sample episodes
+├── configs/                    # Taxonomy manifest
+├── outputs/                    # Inference results
+├── requirements.txt
+├── setup_env.sh
+├── preflight_inference.sh
+├── run_encoder_only.sh         # Per-encoder: encoder-only inference
+├── run_*_encoder_only.sh       # Encoder-specific wrappers
+├── run_*_with_scorer.sh        # Encoder-specific full pipeline
+├── run_real_with_scorer.sh     # Full pipeline with scorer
+├── build_sample_episode.sh
+├── verify_all_encoders.sh
+└── selected_encoders.txt
+```
 
-Included:
-- local AV framework: `framework/`
-- vendored PV-RCNN backend: `vendor/openpcdet/`
-- local checkpoints: `checkpoints/`
-- local Brain-B stats artifact: `artifacts/brain_b_clean_stats.npz`
-- staged sample episode: `dataset/episode_000001.npz`
-- tools:
-  - `tools/run_inference_episode.py`
-  - `tools/run_encoder_only_episode.py`
-  - `tools/preflight_inference.py`
-  - `tools/download_official_checkpoints.py`
+## Quick Start
+
+```bash
+cd Analysis/av
+
+# 1. Set up Python environment
+bash setup_env.sh
+
+# 2. Preflight check (validates all encoders)
+DEVICE=cpu bash preflight_inference.sh
+
+# 3. Run encoder-only inference
+DEVICE=cpu bash run_encoder_only.sh pointpillars
+
+# 4. Run full pipeline with scorer
+DEVICE=cpu bash run_real_with_scorer.sh pointpillars
+```
 
 ## Environment Setup
 
@@ -29,63 +67,110 @@ cd Analysis/av
 bash setup_env.sh
 ```
 
-For `pvrcnn`, `spconv` and CUDA-compatible pointnet2 builds still need to work on the machine. The repo is standalone from `training`, but `pvrcnn` still depends on those third-party CUDA packages.
+This installs Python dependencies from `requirements.txt`. For PV-RCNN, you also need
+CUDA-compatible `spconv` and `pointnet2` builds on the machine — these are not pip-installable
+and must match your CUDA version.
 
-## Local Assets
+## Running Encoder-Only Inference
 
-Default local paths:
-- checkpoints: `Analysis/av/checkpoints/*.pth`
-- Brain-B stats: `Analysis/av/artifacts/brain_b_clean_stats.npz`
-- vendored OpenPCDet: `Analysis/av/vendor/openpcdet`
-
-If checkpoints are missing, download them with:
+Per-encoder scripts run just the LiDAR encoder (no scorer), useful for hardware profiling:
 
 ```bash
-cd Analysis/av
-python3 tools/download_official_checkpoints.py --encoders all
+DEVICE=cuda:0 bash run_encoder_only.sh <encoder>
 ```
 
-## Strict Readiness Check
+where `<encoder>` is one of: `pointpillars`, `pointrcnn`, `pvrcnn`, `centerpoint`.
+
+Encoder-specific wrappers also exist:
 
 ```bash
-cd Analysis/av
-DEVICE=cuda:0 bash preflight_inference.sh
+DEVICE=cuda:0 bash run_pointpillars_encoder_only.sh
+DEVICE=cuda:0 bash run_pvrcnn_encoder_only.sh
 ```
 
-This validates, per encoder:
-- checkpoint presence and strict load status
-- one-step forward pass through adapter + projector + scorers
-- embedding/scorer stats output
+Outputs are saved to `outputs/` as JSON files with per-frame latency and embedding statistics.
 
-## Run Inference
+## Running with Scorer
 
-Encoder only:
+Full pipeline: encoder + projection + Brain A + Brain B + temporal state machine:
 
 ```bash
-cd Analysis/av
-DEVICE=cuda:0 bash run_encoder_only.sh centerpoint
+DEVICE=cuda:0 bash run_real_with_scorer.sh <encoder>
 ```
 
-Encoder + scorer:
+With trained stage-2 weights:
 
 ```bash
-cd Analysis/av
-DEVICE=cuda:0 bash run_real_with_scorer.sh centerpoint
+CHECKPOINT_PATH="artifacts/pointpillars_stage2_checkpoint.pt" \
+BRAIN_B_STATS="artifacts/brain_b_clean_stats.npz" \
+DEVICE=cuda:0 bash run_real_with_scorer.sh pointpillars
 ```
 
-With trained AV stage-2 weights:
+## Online Calibration
 
-```bash
-cd Analysis/av
-CHECKPOINT_PATH="/path/to/av_stage2_checkpoint.pt" BRAIN_B_STATS="/path/to/brain_b_clean_stats.npz" DEVICE="cuda:0" bash run_real_with_scorer.sh centerpoint
+Online calibration normalizes raw reliability scores using a streaming baseline computed from
+the first N frames (prefix). It maps score drops to calibrated values via an exponential function.
+
+Key config knobs (in `RuntimeConfig`):
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `enable_online_calibration` | `True` | Enable/disable calibration |
+| `online_calibration_apply_in_train` | `False` | Apply during training (usually off) |
+| `online_calibration_prefix_len` | `50` | Frames to compute baseline |
+| `online_calibration_mode` | `"simple"` | `"simple"` or `"normalized"` |
+| `online_calibration_alpha` | `10.0` | Exponential mapping steepness |
+| `online_calibration_gamma` | `1.0` | Drop shaping exponent |
+| `online_calibration_min_score` | `0.05` | Floor for calibrated scores |
+| `online_calibration_max_score` | `1.0` | Ceiling for calibrated scores |
+| `online_calibration_emit_before_ready` | `True` | Emit values before baseline frozen |
+| `online_calibration_use_piecewise_drop` | `False` | Two-slope drop shaping |
+
+## Using Trained Stage-2 Weights
+
+Per-encoder trained artifacts are in `artifacts/`:
+
+```
+artifacts/
+├── brain_b_clean_stats.npz                    # Shared Brain-B reference stats
+├── {encoder}_stage2_checkpoint.pt             # Trained stage-2 weights
+├── {encoder}_family_md_enrolled.pt            # Family Mahalanobis distance stats
+└── {encoder}_family_md_calibration.json       # Family MD calibration thresholds
 ```
 
-## Sample Episode
+Encoders: `pointpillars`, `pointrcnn`, `pvrcnn`, `centerpoint`.
 
-A bundled staged sample is already included under `dataset/episode_000001.npz`.
-To rebuild it from raw LiDAR frames, pass an explicit root or set `DATA_ROOT`:
+To use a specific encoder's trained weights, set `CHECKPOINT_PATH` to the corresponding
+`{encoder}_stage2_checkpoint.pt` file.
+
+## Building Sample Episodes
+
+A bundled sample episode is included at `dataset/episode_000001.npz`.
+To rebuild from raw LiDAR frames:
 
 ```bash
-cd Analysis/av
 DATA_ROOT=/path/to/LIDAR_TOP bash build_sample_episode.sh
 ```
+
+## Hardware Profiling
+
+- **Encoder-only** (`run_encoder_only.sh`): Profiles pure encoder forward pass — use this
+  for per-encoder latency/throughput measurements.
+- **With scorer** (`run_real_with_scorer.sh`): Full pipeline including projection, scoring,
+  and temporal state — use this for end-to-end latency.
+
+Both modes save per-frame timing to `outputs/`.
+
+## Troubleshooting
+
+**PV-RCNN CUDA errors**: PV-RCNN requires `spconv` and CUDA pointnet2 ops compiled for your
+GPU architecture. Ensure `CUDA_HOME` is set and matches your PyTorch CUDA version.
+
+**Checkpoint not found**: Run `python3 tools/download_official_checkpoints.py --encoders all`
+to download pretrained encoder weights.
+
+**Device selection**: Set `DEVICE=cpu` to run without GPU. For multi-GPU machines, use
+`DEVICE=cuda:N` to select a specific GPU.
+
+**Import errors**: All imports must resolve within `Analysis/av/`. If you see import errors
+referencing `training/`, something is wrong — this pack should be fully self-contained.

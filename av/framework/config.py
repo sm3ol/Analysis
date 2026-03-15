@@ -147,6 +147,19 @@ class RuntimeConfig:
     device: str = "auto"
     preferred_gpu_index: int = 1
     num_workers: int = 0
+    enable_online_calibration: bool = True
+    online_calibration_apply_in_train: bool = False
+    online_calibration_prefix_len: int = 50
+    online_calibration_mode: str = "simple"
+    online_calibration_alpha: float = 10.0
+    online_calibration_gamma: float = 1.0
+    online_calibration_eps: float = 1e-6
+    online_calibration_min_score: float = 0.05
+    online_calibration_max_score: float = 1.0
+    online_calibration_emit_before_ready: bool = True
+    online_calibration_use_piecewise_drop: bool = False
+    online_calibration_piecewise_knee: float = 0.1
+    online_calibration_piecewise_tail_mult: float = 3.0
 
 
 @dataclass
