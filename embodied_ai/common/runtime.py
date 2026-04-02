@@ -16,14 +16,19 @@ from .core.scorer import BrainAScorer, BrainBScorer
 from .core.temporal import ReliabilityMode, ReliabilityState, ReliabilityStateMachine
 from .types import ReliabilityStepOutput, TrainBatch
 
+# Import the custom hardware kernel
+from .core.fused_scorer import FusedBrainScorer
+
 
 @dataclass
 class InferenceComponents:
     adapter: EncoderAdapter
     projector: SharedProjectionHead
-    brain_a: BrainAScorer
-    brain_b: BrainBScorer
+    fused_scorer: FusedBrainScorer  # Replaced individual Brain A/B with Fused Scorer
     state_machine: ReliabilityStateMachine
+    
+    # We still keep a reference to Brain B purely for the state machine's mu_clean fallback
+    brain_b_ref: BrainBScorer 
 
 
 class InferenceRuntime:
@@ -61,19 +66,27 @@ class InferenceRuntime:
             stream_id = int(batch.episode_id[i].item()) if torch.is_tensor(batch.episode_id) else int(i)
             state = self.state_by_stream.get(stream_id, ReliabilityState())
             z_i = z[i]
+            
             if state.belief_ema is None:
                 state.belief_ema = z_i.detach()
 
             belief_i = state.belief_ema.to(z_i.device)
-            a_out = self.components.brain_a(belief_i.unsqueeze(0), z_i.unsqueeze(0))
-            b_out = self.components.brain_b(z_i.unsqueeze(0))
-            r_a = a_out.reliability.squeeze(0)
-            r_b = b_out.reliability.squeeze(0)
-            md_clean = b_out.md_clean.squeeze(0)
-            d_clean = torch.norm(
-                z_i.detach() - self.components.brain_b.mu_clean.to(z_i.device),
-                p=2,
+            
+            # ==========================================
+            # 1. THE FUSED KERNEL CALL
+            # ==========================================
+            # Both Brain A and Brain B logic are computed in one fast JIT call
+            r_a_out, r_b_out, md_clean_out = self.components.fused_scorer(
+                belief_i.unsqueeze(0), z_i.unsqueeze(0)
             )
+            
+            r_a = r_a_out.squeeze(0)
+            r_b = r_b_out.squeeze(0)
+            md_clean = md_clean_out.squeeze(0)
+            
+            # Use md_clean directly from the fused kernel (no extra norm call)
+            d_clean = md_clean 
+
             recover_rb_ema_alpha = float(getattr(self.config.temporal, "recover_rb_ema_alpha", 0.0))
             r_b_recover = r_b
             if recover_rb_ema_alpha > 0.0 and state.mode == ReliabilityMode.PERSISTENT:
@@ -82,17 +95,18 @@ class InferenceRuntime:
                 state.recover_rb_ema = r_b_recover.detach()
             elif state.mode != ReliabilityMode.PERSISTENT:
                 state.recover_rb_ema = None
+                
             d_bad = None
             if state.mu_bad is not None:
                 d_bad = torch.norm(z_i.detach() - state.mu_bad.to(z_i.device), p=2)
+                
             # During the known-clean warmup prefix, calibrate belief/state only.
-            # This prevents early false alarms from pushing the stream into
-            # SUSPECT/PERSISTENT before any corruption can occur.
             warmup_known_clean = False
             if batch.timestep is not None and "corrupt_start" in batch.metadata:
                 c_start = int(batch.metadata["corrupt_start"][i].item())
                 t_i = int(batch.timestep[i].item())
                 warmup_known_clean = t_i < c_start
+                
             if state.mode == ReliabilityMode.PERSISTENT:
                 persistent_enter_threshold_b = float(
                     getattr(
@@ -107,6 +121,7 @@ class InferenceRuntime:
                 raw_suspicious = False
             else:
                 raw_suspicious = bool(r_a.item() < self.config.temporal.suspicious_threshold_a)
+                
             suspicious = False if warmup_known_clean else raw_suspicious
 
             step_result = self.components.state_machine.step(
@@ -198,6 +213,7 @@ def build_runtime(config: FrameworkConfig, adapter: EncoderAdapter, device: torc
         hidden_dim=config.model.projection_hidden_dim,
         dropout=config.model.projection_dropout,
     ).to(device)
+    
     brain_a = BrainAScorer(latent_dim=config.model.common_latent_dim).to(device)
     stats: CleanReferenceStats = load_clean_reference_stats(config.brain_b.stats_artifact_path, device=str(device))
     brain_b = BrainBScorer(
@@ -205,16 +221,22 @@ def build_runtime(config: FrameworkConfig, adapter: EncoderAdapter, device: torc
         temperature=config.brain_b.md_temperature,
         bias=config.brain_b.md_bias,
     ).to(device)
+    
     apply_frozen_test_params(config, brain_b)
+    
+    # Initialize our custom hardware kernel
+    fused_scorer = FusedBrainScorer(brain_a, brain_b).to(device)
+    
     state_machine = ReliabilityStateMachine(config.temporal)
+    
     return InferenceRuntime(
         config=config,
         components=InferenceComponents(
             adapter=adapter,
             projector=projector,
-            brain_a=brain_a,
-            brain_b=brain_b,
+            fused_scorer=fused_scorer, # Pass the fused kernel
             state_machine=state_machine,
+            brain_b_ref=brain_b # Pass brain_b ref just for fallback parameters
         ),
         device=device,
     )

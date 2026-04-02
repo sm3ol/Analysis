@@ -1,0 +1,12 @@
+{
+  "device": "cuda",
+  "result": {
+    "status": "passed",
+    "mode_trace": [
+      "clean",
+      "clean",
+      "clean"
+    ],
+    "mean_final": 0.16666666666666666
+  }
+}

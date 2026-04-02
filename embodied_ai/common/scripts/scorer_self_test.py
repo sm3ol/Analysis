@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -13,8 +14,9 @@ from embodied_ai.common.device import resolve_device
 from embodied_ai.common.core.brain_b_stats import fit_clean_reference_stats
 from embodied_ai.common.core.scorer import BrainAScorer, BrainBScorer
 from embodied_ai.common.core.temporal import ReliabilityMode, ReliabilityState, ReliabilityStateMachine
-from embodied_ai.common.runtime import apply_frozen_test_params
 
+# 1. Import our new custom Triton kernel wrapper
+from embodied_ai.common.core.fused_scorer import FusedBrainScorer
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Shared scorer-only self-test.")
@@ -25,7 +27,6 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--save_path", type=str, required=True)
     return p.parse_args()
 
-
 def main() -> None:
     args = parse_args()
     device = resolve_device(args.device)
@@ -34,41 +35,56 @@ def main() -> None:
 
     out: dict[str, Any] = {"device": str(device), "result": {}}
     try:
+        # Initialize the baseline components
         brain_a = BrainAScorer(latent_dim=int(args.latent_dim)).to(device).eval()
         stats = fit_clean_reference_stats(torch.randn((max(8, int(args.batch_size) * 2), int(args.latent_dim)), dtype=torch.float32))
         brain_b = BrainBScorer(stats=stats, temperature=cfg.brain_b.md_temperature, bias=cfg.brain_b.md_bias).to(device).eval()
-        apply_frozen_test_params(cfg, brain_b)
+        
+        # 2. Wrap them in the Fused Scorer
+        fused_scorer = FusedBrainScorer(brain_a, brain_b).to(device)
+
         sm = ReliabilityStateMachine(cfg.temporal)
         state = ReliabilityState()
         modes = []
         finals = []
         ema_window = max(1, int(cfg.temporal.belief_ema_window))
         ema_alpha = float(ema_window - 1) / float(ema_window)
+        
         for _ in range(max(1, int(args.steps))):
             z = torch.randn((int(args.latent_dim),), device=device)
             if state.belief_ema is None:
                 state.belief_ema = z.detach()
             belief_i = state.belief_ema.to(device)
-            a_out = brain_a(belief_i.unsqueeze(0), z.unsqueeze(0))
-            b_out = brain_b(z.unsqueeze(0))
-            r_a = a_out.reliability.squeeze(0)
-            r_b = b_out.reliability.squeeze(0)
+            
+            # 3. Replace the separate calls with the single fused call
+            r_a, r_b, md_clean = fused_scorer(belief_i.unsqueeze(0), z.unsqueeze(0))
+            
+            # Squeeze to match the rest of the script's dimension expectations
+            r_a = r_a.squeeze(0)
+            r_b = r_b.squeeze(0)
+            md_clean = md_clean.squeeze(0)
+
             if state.mode == ReliabilityMode.PERSISTENT:
                 suspicious = bool(r_b.item() < cfg.temporal.clean_like_threshold_b)
             else:
                 suspicious = bool(r_a.item() < cfg.temporal.suspicious_threshold_a)
-            step = sm.step(state=state, z_t=z.detach(), r_a=r_a, r_b=r_b, suspicious=suspicious, d_clean=b_out.md_clean.squeeze(0), d_bad=None)
+                
+            step = sm.step(state=state, z_t=z.detach(), r_a=r_a, r_b=r_b, suspicious=suspicious, d_clean=md_clean, d_bad=None)
             next_state = step.state
+            
             if step.update_belief and not suspicious:
                 next_state.belief_ema = ema_alpha * belief_i.detach() + (1.0 - ema_alpha) * z.detach()
             state = next_state
+            
             if state.mode == ReliabilityMode.PERSISTENT:
                 finals.append(float(r_b.item()))
             else:
                 finals.append(float(r_a.item()))
             modes.append(state.mode.value)
+            
         out["result"] = {"status": "passed", "mode_trace": modes, "mean_final": float(sum(finals)/len(finals))}
         print(f"[SCORER-TEST] passed final_mode={modes[-1]}", flush=True)
+        
     except Exception as e:
         out["result"] = {"status": "failed", "error": f"{type(e).__name__}: {e}"}
         Path(args.save_path).parent.mkdir(parents=True, exist_ok=True)
@@ -79,6 +95,24 @@ def main() -> None:
     Path(args.save_path).parent.mkdir(parents=True, exist_ok=True)
     Path(args.save_path).write_text(json.dumps(out, indent=2), encoding="utf-8")
 
-
 if __name__ == "__main__":
-    main()
+    # Force the directory to exist regardless of where you run it from
+    os.makedirs('scorer_optimization/outputs', exist_ok=True)
+    
+    with torch.profiler.profile(
+        activities=[
+            torch.profiler.ProfilerActivity.CPU,
+            torch.profiler.ProfilerActivity.CUDA,
+        ],
+        record_shapes=True,
+        profile_memory=True,
+        with_stack=True,
+    ) as prof:
+        try:
+            main()
+        except SystemExit:
+            # Catch the exit so the script survives long enough to write the trace!
+            pass
+            
+    # Safely export
+    prof.export_chrome_trace('scorer_optimization/outputs/scorer_trace.json')
