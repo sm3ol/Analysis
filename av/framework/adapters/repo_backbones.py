@@ -17,6 +17,7 @@ from typing import Iterable
 import torch
 import torch.nn.functional as F
 from torch import nn
+from time import perf_counter
 
 
 class EasyConfig(dict):
@@ -374,12 +375,27 @@ class PillarFeatureBackbone(nn.Module):
         order = torch.argsort(counts, descending=True)
         selected = order[: min(int(order.shape[0]), int(self.config.max_pillars))]
 
+        sort_idx = torch.argsort(inverse)
+        inverse_sorted = inverse[sort_idx]
+        pts_sorted = pts[sort_idx]
+
+        grp_offset = torch.cat(
+            [
+                torch.zeros(1,device = pts.device,dtype = torch.long),
+                counts.cumsum(dim=0),
+            ],
+            dim=0
+        )
+
         voxels: list[torch.Tensor] = []
         num_points: list[int] = []
         coords: list[torch.Tensor] = []
+        
         for sel in selected.tolist():
-            point_idx = torch.nonzero(inverse == sel, as_tuple=False).squeeze(1)
-            chosen = pts[point_idx]
+            sel_i = int(sel)
+            start = int(grp_offset[sel_i].item())
+            end = int(grp_offset[sel_i+1].item())
+            chosen = pts_sorted[start:end]
             if chosen.shape[0] == 0:
                 continue
             keep_idx = self._sample_indices(int(chosen.shape[0]), int(self.config.max_points_per_pillar), chosen.device)
@@ -422,13 +438,40 @@ class PillarFeatureBackbone(nn.Module):
         }
 
     def forward(self, points: torch.Tensor) -> tuple[torch.Tensor, dict[str, tuple[int, ...]]]:
+        def _sync() -> None:
+            if points.device.type == "cuda":
+                torch.cuda.synchronize(points.device)
+            elif points.device.type == "mps":
+                torch.mps.synchronize()
+
+        _sync()
+        t0 = perf_counter()
         batch_dict = self.build_batch_dict(points)
+        _sync()
+        t1 = perf_counter()
         batch_dict = self.vfe(batch_dict)
+        _sync()
+        t2 = perf_counter()
         batch_dict = self.scatter(batch_dict)
+        _sync()
+        t3 = perf_counter()
         batch_dict = self.backbone_2d(batch_dict)
+        _sync()
+        t4 = perf_counter()
         spatial = batch_dict["spatial_features_2d"]
         pooled = F.adaptive_avg_pool2d(spatial, self.config.token_pool_hw)
         tokens = pooled.flatten(2).transpose(1, 2).contiguous()
+        _sync()
+        t5 = perf_counter()
+
+        print(
+            "[PillarFeatureBackbone] "
+            f"build_batch_dict={(t1 - t0) * 1000.0:.3f} ms, "
+            f"vfe={(t2 - t1) * 1000.0:.3f} ms, "
+            f"scatter={(t3 - t2) * 1000.0:.3f} ms, "
+            f"backbone_2d={(t4 - t3) * 1000.0:.3f} ms, "
+            f"pool_flatten={(t5 - t4) * 1000.0:.3f} ms"
+        )
         shapes = {
             "voxels": tuple(batch_dict["voxels"].shape),
             "pillar_features": tuple(batch_dict["pillar_features"].shape),
