@@ -438,40 +438,82 @@ class PillarFeatureBackbone(nn.Module):
         }
 
     def forward(self, points: torch.Tensor) -> tuple[torch.Tensor, dict[str, tuple[int, ...]]]:
-        def _sync() -> None:
-            if points.device.type == "cuda":
-                torch.cuda.synchronize(points.device)
-            elif points.device.type == "mps":
-                torch.mps.synchronize()
+        
+        def ms(start: torch.cuda.Event, end: torch.cuda.Event):
+            torch.cuda.synchronize(points.device)
+            return float(start.elapsed_time(end))
 
-        _sync()
-        t0 = perf_counter()
-        batch_dict = self.build_batch_dict(points)
-        _sync()
-        t1 = perf_counter()
-        batch_dict = self.vfe(batch_dict)
-        _sync()
-        t2 = perf_counter()
-        batch_dict = self.scatter(batch_dict)
-        _sync()
-        t3 = perf_counter()
-        batch_dict = self.backbone_2d(batch_dict)
-        _sync()
-        t4 = perf_counter()
-        spatial = batch_dict["spatial_features_2d"]
-        pooled = F.adaptive_avg_pool2d(spatial, self.config.token_pool_hw)
-        tokens = pooled.flatten(2).transpose(1, 2).contiguous()
-        _sync()
-        t5 = perf_counter()
+        if points.device.type =="cuda":
+            e0_start,e0_end = torch.cuda.Event(enable_timing= True), torch.cuda.Event(enable_timing=True)
+            e1_start,e1_end = torch.cuda.Event(enable_timing= True), torch.cuda.Event(enable_timing=True)
+            e2_start,e2_end = torch.cuda.Event(enable_timing= True), torch.cuda.Event(enable_timing=True)
+            e3_start,e3_end = torch.cuda.Event(enable_timing= True), torch.cuda.Event(enable_timing=True)
+            e4_start,e4_end = torch.cuda.Event(enable_timing= True), torch.cuda.Event(enable_timing=True)
 
-        print(
-            "[PillarFeatureBackbone] "
-            f"build_batch_dict={(t1 - t0) * 1000.0:.3f} ms, "
-            f"vfe={(t2 - t1) * 1000.0:.3f} ms, "
-            f"scatter={(t3 - t2) * 1000.0:.3f} ms, "
-            f"backbone_2d={(t4 - t3) * 1000.0:.3f} ms, "
-            f"pool_flatten={(t5 - t4) * 1000.0:.3f} ms"
-        )
+            e0_start.record()
+            batch_dict = self.build_batch_dict(points)
+            e0_end.record()
+
+            e1_start.record()
+            batch_dict = self.vfe(batch_dict)
+            e1_end.record()
+
+            e2_start.record()
+            batch_dict = self.scatter(batch_dict)
+            e2_end.record()
+
+            e3_start.record()
+            batch_dict = self.backbone_2d(batch_dict)
+            e3_end.record()
+
+            e4_start.record()
+            spatial = batch_dict["spatial_features_2d"]
+            pooled = F.adaptive_avg_pool2d(spatial, self.config.token_pool_hw)
+            tokens = pooled.flatten(2).transpose(1, 2).contiguous()
+            e4_end.record()
+            print(
+                "[PillarFeatureBackbone cuda] "
+                f"build_batch_dict={ms(e0_start, e0_end):.3f} ms, "
+                f"vfe={ms(e1_start, e1_end):.3f} ms, "
+                f"scatter={ms(e2_start, e2_end):.3f} ms, "
+                f"backbone_2d={ms(e3_start, e3_end):.3f} ms, "
+                f"pool_flatten={ms(e4_start, e4_end):.3f} ms"
+            )
+        else:
+            def _sync() -> None:
+                if points.device.type == "cuda":
+                    torch.cuda.synchronize(points.device)
+                elif points.device.type == "mps":
+                    torch.mps.synchronize()
+
+            _sync()
+            t0 = perf_counter()
+            batch_dict = self.build_batch_dict(points)
+            _sync()
+            t1 = perf_counter()
+            batch_dict = self.vfe(batch_dict)
+            _sync()
+            t2 = perf_counter()
+            batch_dict = self.scatter(batch_dict)
+            _sync()
+            t3 = perf_counter()
+            batch_dict = self.backbone_2d(batch_dict)
+            _sync()
+            t4 = perf_counter()
+            spatial = batch_dict["spatial_features_2d"]
+            pooled = F.adaptive_avg_pool2d(spatial, self.config.token_pool_hw)
+            tokens = pooled.flatten(2).transpose(1, 2).contiguous()
+            _sync()
+            t5 = perf_counter()
+
+            print(
+                "[PillarFeatureBackbone] "
+                f"build_batch_dict={(t1 - t0) * 1000.0:.3f} ms, "
+                f"vfe={(t2 - t1) * 1000.0:.3f} ms, "
+                f"scatter={(t3 - t2) * 1000.0:.3f} ms, "
+                f"backbone_2d={(t4 - t3) * 1000.0:.3f} ms, "
+                f"pool_flatten={(t5 - t4) * 1000.0:.3f} ms"
+            )
         shapes = {
             "voxels": tuple(batch_dict["voxels"].shape),
             "pillar_features": tuple(batch_dict["pillar_features"].shape),
